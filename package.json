@@ -1,0 +1,53 @@
+{
+  "name": "zkboard-relay-network",
+  "version": "1.0.0",
+  "description": "Anonymous message board with decentralized relay network powered by Zero-Knowledge proofs (Semaphore Protocol)",
+  "main": "index.js",
+  "directories": {
+    "test": "test",
+    "contracts": "contracts",
+    "scripts": "scripts"
+  },
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.ts --network sepolia",
+    "node": "hardhat node",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "zero-knowledge",
+    "zk-snark",
+    "semaphore",
+    "anonymous",
+    "blockchain",
+    "ethereum",
+    "relay-network",
+    "privacy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/zkboard-relay-network"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@semaphore-protocol/group": "^3.15.2",
+    "@semaphore-protocol/identity": "^3.15.2",
+    "dotenv": "^17.2.3",
+    "hardhat": "^2.28.0"
+  },
+  "dependencies": {
+    "@semaphore-protocol/contracts": "^4.14.0",
+    "@semaphore-protocol/core": "^4.14.0",
+    "@semaphore-protocol/utils": "^4.14.0",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
