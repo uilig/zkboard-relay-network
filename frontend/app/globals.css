@@ -1,0 +1,177 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Enhanced scrollbar with glow */
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: rgba(30, 41, 59, 0.5);
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.1);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgb(99, 102, 241), rgb(79, 70, 229));
+    border-radius: 10px;
+    border: 2px solid rgba(30, 41, 59, 0.3);
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgb(129, 140, 248), rgb(99, 102, 241));
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+  }
+}
+
+/* Base styles */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: rgb(15, 23, 42); /* slate-900 */
+    color: white;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Selection styling */
+  ::selection {
+    background-color: rgba(99, 102, 241, 0.3);
+    color: white;
+  }
+
+  ::-moz-selection {
+    background-color: rgba(99, 102, 241, 0.3);
+    color: white;
+  }
+}
+
+/* Component utilities */
+@layer components {
+  /* Premium button */
+  .btn-premium {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(to right, rgb(79, 70, 229), rgb(99, 102, 241), rgb(59, 130, 246));
+    color: white;
+    font-weight: 700;
+    transition: all 0.3s;
+    border: 1px solid rgba(129, 140, 248, 0.3);
+  }
+
+  .btn-premium:hover {
+    box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.5);
+  }
+
+  .btn-premium:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-premium::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: linear-gradient(to right, rgb(129, 140, 248), rgb(96, 165, 250), rgb(129, 140, 248));
+    transition: opacity 0.3s;
+    background-size: 200% 100%;
+    animation: gradient-shift 3s ease infinite;
+  }
+
+  .btn-premium:hover::before {
+    opacity: 0.2;
+  }
+
+  /* Premium card */
+  .card-glass {
+    border-radius: 1rem;
+    border: 1px solid rgba(51, 65, 85, 0.5);
+    background: linear-gradient(to bottom right, rgba(30, 41, 59, 0.8), rgba(30, 41, 59, 0.6));
+    backdrop-filter: blur(24px);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    transition: all 0.3s;
+  }
+
+  .card-glass:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 25px 50px -12px rgba(99, 102, 241, 0.2);
+  }
+
+  /* Text shimmer */
+  .text-shimmer {
+    background: linear-gradient(to right, white, rgb(199, 210, 254), white);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    background-size: 200% auto;
+    animation: shimmer 3s linear infinite;
+  }
+}
+
+/* Utility classes */
+@layer utilities {
+  /* Gradient backgrounds */
+  .bg-gradient-radial {
+    background: radial-gradient(var(--tw-gradient-stops));
+  }
+
+  /* Glass morphism variants */
+  .glass-light {
+    background-color: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-medium {
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .glass-dark {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+  }
+
+  /* Glow utilities */
+  .glow-sm {
+    box-shadow: 0 0 10px currentColor;
+  }
+
+  .glow-md {
+    box-shadow: 0 0 20px currentColor;
+  }
+
+  .glow-lg {
+    box-shadow: 0 0 40px currentColor;
+  }
+}
