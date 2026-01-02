@@ -205,7 +205,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 For questions and support:
 - Open an issue on GitHub
-- Contact: your@email.com
+
 
 ---
 
