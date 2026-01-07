@@ -31,7 +31,7 @@
 // ============================================================================
 
 // Indirizzo del contratto ZKBoard deployato su Sepolia testnet
-export const ZKBOARD_ADDRESS = "0xbB0d8200A285d6627B889Cbd299624DE6BcCE9C4";
+export const ZKBOARD_ADDRESS = "0x7ae7DFB7b72f5b3E1abaec06CA3dcc1eE1D298Aa";
 // IMPORTANTE: Questo indirizzo è specifico per il deployment su Sepolia
 // Se rideploy il contratto, devi aggiornare questo valore!
 // Per ottenere l'indirizzo dopo il deploy: npx hardhat run scripts/deploy.ts --network sepolia
@@ -41,7 +41,7 @@ export const ZKBOARD_ADDRESS = "0xbB0d8200A285d6627B889Cbd299624DE6BcCE9C4";
 // ============================================================================
 
 // ID del gruppo Semaphore usato dall'applicazione
-export const FALLBACK_GROUP_ID = 1767286984;
+export const FALLBACK_GROUP_ID = 1767789663;
 // COSA È: Ogni applicazione Semaphore crea un gruppo con un ID univoco
 // COME È GENERATO: Il contratto ZKBoard crea automaticamente un gruppo durante il deploy
 // PERCHÉ SI CHIAMA FALLBACK: In alcune versioni precedenti c'era la possibilità di

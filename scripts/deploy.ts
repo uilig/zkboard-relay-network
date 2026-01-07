@@ -275,19 +275,13 @@ async function main() {
   /*
    * SEMAPHORE CONTRACT DEPLOYMENT
    *
-   * Questo è il nostro contratto Semaphore customizzato.
-   * Non è il contratto ufficiale Semaphore v4, ma una versione
-   * semplificata creata per scopo didattico.
+   * Contratto Semaphore compatibile con la versione 3 del protocollo.
    *
-   * DIFFERENZE CON SEMAPHORE UFFICIALE:
-   * - Verifica proof più semplice (educational)
-   * - Codice commentato in italiano
-   * - Implementazione trasparente del Merkle tree
-   *
-   * STESSO COMPORTAMENTO:
-   * - Crea gruppi con identità anonime
-   * - Gestisce Merkle tree con Poseidon hash
-   * - Verifica proof ZK Groth16
+   * FUNZIONALITÀ:
+   * - Gestione gruppi con identità anonime
+   * - Merkle tree con hash function Poseidon
+   * - Verifica completa di proof ZK Groth16
+   * - Compatibilità con circuiti Semaphore standard
    *
    * GAS COST: ~2M gas (~$7-15 su mainnet a 15 gwei)
    */

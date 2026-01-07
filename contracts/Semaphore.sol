@@ -75,21 +75,21 @@ pragma solidity ^0.8.20;
  */
 interface ISemaphoreVerifier {
     /**
-     * @notice Verifica una proof Groth16
+     * @notice Verifica una proof Groth16 (Semaphore v4)
      * @param a Primo componente della proof (punto curva ellittica)
      * @param b Secondo componente della proof (coppia di punti)
      * @param c Terzo componente della proof (punto curva ellittica)
-     * @param input Input pubblici della proof (merkleRoot, signal, etc.)
-     *
-     * IMPORTANTE: Questa funzione fa REVERT se la proof non è valida
-     * Non restituisce un booleano, semplicemente fallisce se invalida
+     * @param pubSignals Input pubblici della proof [merkleRoot, nullifierHash, signal, externalNullifier]
+     * @param merkleTreeDepth Profondità del Merkle tree del gruppo
+     * @return bool True se la proof è valida, false altrimenti
      */
     function verifyProof(
-        uint256[2] memory a,
-        uint256[2][2] memory b,
-        uint256[2] memory c,
-        uint256[1] memory input
-    ) external view;
+        uint256[2] calldata a,
+        uint256[2][2] calldata b,
+        uint256[2] calldata c,
+        uint256[4] calldata pubSignals,
+        uint256 merkleTreeDepth
+    ) external view returns (bool);
 }
 
 /**
@@ -633,25 +633,38 @@ contract Semaphore {
         // TOTALE: 8 elementi uint256
 
         // Input pubblici del circuito
-        // NOTA: L'ordine e il numero di input dipendono dal circuito specifico
-        // Nel circuito Semaphore standard, gli input pubblici sono:
+        // Nel circuito Semaphore standard, gli input pubblici sono QUATTRO:
         // [merkleTreeRoot, nullifierHash, signal, externalNullifier]
         //
-        // Per semplicità, in questa implementazione passiamo solo merkleTreeRoot
-        // In una implementazione completa, dovresti mappare tutti gli input correttamente
-        uint256[1] memory inputs;
+        // IMPORTANTE: Il verifier Semaphore v4 richiede TUTTI E 4 gli input pubblici
+        // per verificare correttamente la proof. Omettere anche solo uno di questi
+        // renderebbe la verifica inutile o incorretta.
+        //
+        // ORDINE DEGLI INPUT (CRITICO):
+        // L'ordine DEVE corrispondere esattamente a quello definito nel circuito ZK.
+        // Se l'ordine è sbagliato, la verifica fallirà anche con proof valide.
+        uint256[4] memory inputs;
 
-        // IMPORTANTE: Mappatura corretta degli input pubblici
-        // Questo dipende da come è stato compilato il circuito ZK
-        // Se il circuito si aspetta input diversi, la verifica fallirà
-        //
-        // NOTA TECNICA:
-        // Questa è una semplificazione per proof of concept. In produzione, tutti gli
-        // input pubblici (merkleRoot, nullifierHash, signal, externalNullifier)
-        // dovrebbero essere passati al verifier nell'ordine corretto.
-        //
-        // Per il nostro scopo (proof of concept), ci affidiamo al fatto che
-        // ZKBoard verifica la logica business prima di chiamare questa funzione.
+        // Input 0: Merkle Tree Root
+        // Root dell'albero al momento della generazione della proof
+        // Serve per verificare che l'identità era effettivamente nel gruppo
+        inputs[0] = merkleTreeRoot;
+
+        // Input 1: Nullifier Hash
+        // Hash univoco derivato da: hash(identityNullifier, externalNullifier)
+        // Previene il riutilizzo della stessa proof (double-signaling)
+        inputs[1] = nullifierHash;
+
+        // Input 2: Signal
+        // Hash del messaggio o segnale che l'utente vuole inviare
+        // Nel caso di ZKBoard, è il keccak256 del messaggio
+        inputs[2] = signal;
+
+        // Input 3: External Nullifier
+        // Valore esterno che varia il contesto del nullifier
+        // Permette alla stessa identità di segnalare più volte in contesti diversi
+        // Nel nostro caso, usiamo il groupId come external nullifier
+        inputs[3] = externalNullifier;
 
         // STEP 3: VERIFICA CRITTOGRAFICA
         // Chiamiamo il Verifier on-chain per verificare la proof Groth16
@@ -668,32 +681,56 @@ contract Semaphore {
         //
         // GAS COST: ~300k gas (dominato da operazioni pairing BN254)
 
-        try verifier.verifyProof(
+        // ═════════════════════════════════════════════════════════════════
+        // RECUPERO DEPTH DEL GRUPPO
+        // ═════════════════════════════════════════════════════════════════
+
+        // Recuperiamo il gruppo dallo storage per ottenere la profondità dell'albero
+        // La depth è necessaria perché il verifier Semaphore v4 la richiede come parametro
+        // per selezionare i parametri di verifica corretti (ogni depth ha parametri diversi)
+        Group storage group = groups[groupId];
+
+        // ═════════════════════════════════════════════════════════════════
+        // VERIFICA PROOF CON VERIFIER GROTH16
+        // ═════════════════════════════════════════════════════════════════
+
+        // Chiamiamo il contratto SemaphoreVerifier per verificare la proof
+        //
+        // DIFFERENZA CON VERSIONE PRECEDENTE:
+        // - Ora passiamo TUTTI E 4 gli input pubblici (inputs array)
+        // - Aggiungiamo il parametro group.depth richiesto dal verifier v4
+        // - Il verifier v4 RITORNA bool invece di fare revert
+        //
+        // PARAMETRI PASSATI:
+        // 1. [proof[0], proof[1]]: punto A sulla curva BN254
+        // 2. [[proof[2], proof[3]], [proof[4], proof[5]]]: coppia di punti B
+        // 3. [proof[6], proof[7]]: punto C sulla curva BN254
+        // 4. inputs: array di 4 input pubblici (root, nullifier, signal, externalNullifier)
+        // 5. group.depth: profondità Merkle tree (serve per selezionare parametri corretti)
+        //
+        // SICUREZZA:
+        // Se anche solo UNO dei parametri è sbagliato, la verifica fallirà.
+        // Questo garantisce che la proof sia matematicamente valida E che
+        // gli input pubblici corrispondano esattamente a quelli del circuito.
+        bool isValid = verifier.verifyProof(
             [proof[0], proof[1]],                         // a (punto curva)
             [[proof[2], proof[3]], [proof[4], proof[5]]], // b (coppia punti)
             [proof[6], proof[7]],                         // c (punto curva)
-            [merkleTreeRoot]                              // input pubblici
-        ) {
-            // VERIFICA RIUSCITA
-            // Il Verifier ha confermato che la proof è matematicamente valida
-            return true;
-        } catch {
-            // VERIFICA FALLITA
-            // Possibili cause:
-            // 1. La proof è matematicamente invalida (tentativi di frode)
-            // 2. Gli input pubblici non corrispondono al circuito
-            // 3. La proof è stata generata con parametri diversi
-            //
-            // NOTA: In questa implementazione didattica, restituiamo true anche
-            // se la verifica fallisce, purché il root sia valido.
-            // Questo serve a bypassare eventuali problemi di mapping degli input.
-            //
-            // IN PRODUZIONE: Questa riga dovrebbe essere:
-            // return false;
-            // oppure
-            // revert("Invalid proof");
-            return true;
-        }
+            inputs,                                       // input pubblici (4 elementi)
+            group.depth                                   // profondità Merkle tree
+        );
+
+        // ═════════════════════════════════════════════════════════════════
+        // RETURN RISULTATO VERIFICA
+        // ═════════════════════════════════════════════════════════════════
+
+        // Ritorniamo il risultato della verifica
+        // - true: La proof è matematicamente valida E gli input sono corretti
+        // - false: La proof è invalida O gli input non corrispondono al circuito
+        //
+        // IMPORTANTE: Ora ritorniamo false in caso di errore, NON true come prima.
+        // Questo previene il bypass della verifica che esisteva nella versione precedente.
+        return isValid;
     }
 }
 

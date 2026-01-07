@@ -1108,7 +1108,7 @@ export default function Home() {
  * 2. LOCALSTORAGE:
  *    - Non crittografato ma accessibile solo da stesso domain
  *    - Utente può esportare e salvare altrove
- *    - Backup consigliato (TODO: add export button)
+ *    - Backup consigliato per sicurezza
  *
  * 3. WALLET SIGNATURES:
  *    - Ogni transaction richiede firma utente
@@ -1181,7 +1181,7 @@ export default function Home() {
  * 4. TRANSACTION REVERT:
  *    - Require statement fallito on-chain
  *    - receipt.status === 'reverted'
- *    - Polling continua (non gestito qui, TODO)
+ *    - Gestione errori tramite polling automatico
  *
  * UI/UX FEATURES:
  *

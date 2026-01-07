@@ -186,6 +186,25 @@ contract ZKBoard {
     /// @dev Se flagCount >= MIN_FLAGS_TO_HIDE, il messaggio viene considerato "hidden"
     uint256 public constant MIN_FLAGS_TO_HIDE = 3;
 
+    /// @notice Flag che indica se il contratto è stato inizializzato
+    /// @dev Previene chiamate multiple a initializeBoard()
+    ///
+    /// PERCHÉ NECESSARIO:
+    /// Senza questa protezione, chiunque potrebbe chiamare initializeBoard()
+    /// multiple volte, causando potenziali problemi:
+    /// - Creazione di gruppi duplicati con lo stesso groupId
+    /// - Corruzione dello stato del contratto Semaphore
+    /// - Possibili exploit se la creazione del gruppo fallisce
+    ///
+    /// TIPO DI VARIABILE:
+    /// - private: Non accessibile dall'esterno (a differenza di public)
+    /// - bool: false di default al deploy, diventa true dopo prima chiamata
+    ///
+    /// PATTERN:
+    /// Questo è il pattern "Initialization Guard" standard per contratti Solidity.
+    /// Simile al modifier "initializer" di OpenZeppelin, ma implementato manualmente.
+    bool private initialized;
+
     // ═════════════════════════════════════════════════════════════════
     // EVENTS
     // ═════════════════════════════════════════════════════════════════
@@ -259,6 +278,44 @@ contract ZKBoard {
      * - Questa separazione è una best practice per deploy complessi
      */
     function initializeBoard() external {
+        // ═════════════════════════════════════════════════════════════════
+        // PROTEZIONE CONTRO INIZIALIZZAZIONE MULTIPLA
+        // ═════════════════════════════════════════════════════════════════
+
+        // STEP 1: Verifica che il contratto non sia già stato inizializzato
+        //
+        // COME FUNZIONA:
+        // - Al deploy, initialized = false (valore default per bool)
+        // - Alla prima chiamata: !initialized = !false = true → passa il check
+        // - Alle chiamate successive: !initialized = !true = false → REVERT
+        //
+        // PERCHÉ È IMPORTANTE:
+        // Previene che utenti malintenzionati chiamino questa funzione più volte,
+        // che potrebbe causare:
+        // 1. Tentativi di creare gruppi duplicati (il contratto Semaphore farebbe revert)
+        // 2. Spreco di gas in transazioni che fallirebbero
+        // 3. Potenziali vulnerabilità se il contratto Semaphore non gestisce bene i duplicati
+        //
+        // MESSAGGIO DI ERRORE:
+        // "Board gia inizializzata" - Messaggio in italiano chiaro per l'utente
+        require(!initialized, "Board gia inizializzata");
+
+        // STEP 2: Marca il contratto come inizializzato
+        //
+        // ORDINE IMPORTANTE (Checks-Effects-Interactions):
+        // Settiamo initialized = true PRIMA di chiamare createGroup().
+        // Questo previene reentrancy attacks: anche se createGroup() potesse
+        // richiamare questo contratto, il require sopra farebbe revert.
+        //
+        // IRREVERSIBILE:
+        // Una volta settato a true, NON può mai tornare false.
+        // Il contratto può essere inizializzato UNA SOLA VOLTA per sempre.
+        initialized = true;
+
+        // ═════════════════════════════════════════════════════════════════
+        // CONFIGURAZIONE GRUPPO SEMAPHORE
+        // ═════════════════════════════════════════════════════════════════
+
         // Depth 20 = max 2^20 = ~1 milione di membri possibili
         // Questo è un buon compromesso tra capacità e gas cost
         uint256 depth = 20;

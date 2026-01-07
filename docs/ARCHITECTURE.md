@@ -39,7 +39,6 @@
 │  │  │ - Deposits       │         │ - Groups         │     │    │
 │  │  │ - Relay Requests │         │ - Merkle Trees   │     │    │
 │  │  │ - Messages       │         │ - verifyProof()  │     │    │
-│  │  │ - Flagging       │         │                  │     │    │
 │  │  └──────────────────┘         └────────┬─────────┘     │    │
 │  │                                        │               │    │
 │  │                          ┌─────────────▼──────────┐    │    │
@@ -332,11 +331,6 @@ contract ZKBoard {
     mapping(uint256 => RelayRequest) public relayRequests;
     uint256 public nextRequestId;
 
-    // Message flagging
-    mapping(bytes32 => uint256) public flagCounts;
-    mapping(bytes32 => mapping(address => bool)) public hasUserFlagged;
-    uint256 public constant MIN_FLAGS_TO_HIDE = 3;
-
     // Message tracking
     uint256 public messageCount;
 
@@ -582,13 +576,6 @@ event DepositToppedUp(
     uint256 amount,
     uint256 newCredits
 );
-
-// Message flagged
-event MessageFlagged(
-    bytes32 indexed contentHash,
-    address indexed flagger,
-    uint256 newFlagCount
-);
 ```
 
 ### Event Consumption
@@ -677,7 +664,6 @@ if (localRoot !== onChainRoot) {
 1. **Batch Operations**: RelayRequests stored, not executed immediately
 2. **Minimal Storage**: Only store hashes, not full messages on some paths
 3. **Efficient Proofs**: Groth16 (constant size, ~280k gas)
-4. **Bitmap Flags**: Consider using for flagging system
 
 ### Frontend Optimization
 

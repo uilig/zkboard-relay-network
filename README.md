@@ -7,7 +7,6 @@ An anonymous message board built with Zero-Knowledge proofs using the Semaphore 
 - **Anonymous Posting**: Messages are completely anonymous thanks to ZK-SNARK proofs
 - **Relay System**: Enhanced privacy through a decentralized relay network
 - **Deposit-Based**: Users deposit ETH to post messages (fully refundable)
-- **Community Moderation**: Flag inappropriate messages (threshold-based removal)
 - **On-Chain Storage**: All messages permanently stored on Ethereum Sepolia
 - **Modern UI**: Clean, responsive interface built with Next.js and TailwindCSS
 
@@ -128,13 +127,6 @@ Open [http://localhost:3000](http://localhost:3000)
 - Relayers earn fees for processing messages
 - Enhanced privacy: your wallet doesn't directly post messages
 - Trustless: ZK proofs ensure message integrity
-
-### 4. Community Moderation
-
-- Users can flag inappropriate messages
-- Messages with ≥3 flags are hidden from the board
-- On-chain data remains immutable
-- Future: reputation system for reliable flaggers
 
 ## 🔧 Development
 
