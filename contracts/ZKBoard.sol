@@ -141,6 +141,10 @@ contract ZKBoard {
         /// @notice Flag che indica se la request è stata eseguita
         /// @dev Previene double-execution della stessa request
         bool executed;
+
+        /// @notice Indice usato come externalNullifier per questa proof
+        /// @dev Permette alla stessa identità di postare messaggi multipli
+        uint256 messageIndex;
     }
 
     /// @notice Mapping di tutte le relay requests
@@ -150,6 +154,11 @@ contract ZKBoard {
     /// @notice Contatore incrementale per generare ID univoci
     /// @dev Ogni nuova request riceve nextRequestId, poi viene incrementato
     uint256 public nextRequestId;
+
+    /// @notice Contatore globale per generare externalNullifier univoci
+    /// @dev Incrementato ad ogni messaggio, usato come externalNullifier
+    ///      per permettere alla stessa identità di postare più messaggi
+    uint256 public messageCounter;
 
     /// @notice Deposito minimo richiesto per unirsi (0.05 ETH)
     /// @dev Equivale a circa 50 messaggi con il costo attuale
@@ -380,13 +389,15 @@ contract ZKBoard {
      * @param proof Array di 8 elementi che costituiscono la proof Groth16
      * @param message Testo del messaggio da postare
      * @param relayFee Fee che verrà pagata al relayer (deve essere <= deposito)
+     * @param messageIndex Indice del messaggio usato come externalNullifier nella proof
      *
      * COME FUNZIONA:
-     * 1. Utente genera proof nel browser (processo offline)
-     * 2. Chiama questa funzione per creare la request on-chain
-     * 3. Gas cost basso (~50k gas) perché salviamo solo dati
-     * 4. La proof NON viene verificata qui (viene verificata in executeRelay)
-     * 5. Qualsiasi relayer può poi eseguire questa request
+     * 1. Utente legge messageCounter dalla blockchain
+     * 2. Utente genera proof nel browser usando messageCounter come externalNullifier
+     * 3. Chiama questa funzione per creare la request on-chain
+     * 4. Gas cost basso (~50k gas) perché salviamo solo dati
+     * 5. La proof NON viene verificata qui (viene verificata in executeRelay)
+     * 6. Qualsiasi relayer può poi eseguire questa request
      *
      * PERCHÉ SEPARARE CREAZIONE ED ESECUZIONE?
      * - Privacy: Separa chi crea la request da chi la esegue
@@ -401,7 +412,8 @@ contract ZKBoard {
         uint256 nullifierHash,
         uint256[8] calldata proof,
         string calldata message,
-        uint256 relayFee
+        uint256 relayFee,
+        uint256 messageIndex
     ) external {
         // Verifica che l'utente abbia crediti
         // 1 credito = diritto di postare 1 messaggio
@@ -410,12 +422,19 @@ contract ZKBoard {
         // Verifica che l'utente abbia abbastanza deposito per pagare la fee
         require(deposits[msg.sender] >= relayFee, "Deposito insufficiente per relay fee");
 
+        // Verifica che messageIndex corrisponda al messageCounter corrente
+        // Questo garantisce che la proof sia stata generata con l'externalNullifier corretto
+        require(messageIndex == messageCounter, "Message index non valido");
+
         // Verifica che questo nullifier non sia già stato usato
         // Previene il riuso della stessa proof (double-posting)
         require(!nullifierHashes[nullifierHash], "Nullifier gia usato");
 
         // Decrementa i crediti (consuma 1 credito per questa request)
         credits[msg.sender]--;
+
+        // Incrementa messageCounter per il prossimo messaggio
+        messageCounter++;
 
         // Genera ID univoco per questa request
         uint256 requestId = nextRequestId++;
@@ -429,7 +448,8 @@ contract ZKBoard {
             message: message,                     // Il messaggio da postare
             relayFee: relayFee,                   // Quanto pagare al relayer
             requester: msg.sender,                // Chi ha creato la request (per payment)
-            executed: false                       // Non ancora eseguita
+            executed: false,                      // Non ancora eseguita
+            messageIndex: messageIndex            // ExternalNullifier usato per questa proof
         });
 
         // Emetti evento che i relayers ascolteranno
@@ -488,6 +508,10 @@ contract ZKBoard {
         // 3. Il nullifier è derivato correttamente dall'identità
         // 4. La proof è matematicamente valida (verifica crittografica)
         //
+        // IMPORTANTE: Usiamo request.messageIndex come externalNullifier
+        // Questo permette alla stessa identità di generare nullifier diversi
+        // per ogni messaggio, abilitando messaggi multipli per identità
+        //
         // SE LA PROOF NON È VALIDA: Semaphore fa REVERT, transaction fallisce
         // SE LA PROOF È VALIDA: Execution continua
         semaphore.verifyProof(
@@ -495,7 +519,7 @@ contract ZKBoard {
             request.merkleTreeRoot,     // Root del tree al momento della proof gen
             signal,                     // Hash del messaggio
             request.nullifierHash,      // Nullifier univoco
-            groupId,                    // External nullifier (usiamo groupId)
+            request.messageIndex,       // External nullifier (messageIndex per multi-msg)
             request.proof               // La proof Groth16 (8 elementi)
         );
 

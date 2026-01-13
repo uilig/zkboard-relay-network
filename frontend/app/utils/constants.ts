@@ -31,7 +31,7 @@
 // ============================================================================
 
 // Indirizzo del contratto ZKBoard deployato su Sepolia testnet
-export const ZKBOARD_ADDRESS = "0x7ae7DFB7b72f5b3E1abaec06CA3dcc1eE1D298Aa";
+export const ZKBOARD_ADDRESS = "0x2dB01A5BB26d8BBc0795522e784D2f796aAFa963";
 // IMPORTANTE: Questo indirizzo è specifico per il deployment su Sepolia
 // Se rideploy il contratto, devi aggiornare questo valore!
 // Per ottenere l'indirizzo dopo il deploy: npx hardhat run scripts/deploy.ts --network sepolia
@@ -41,7 +41,7 @@ export const ZKBOARD_ADDRESS = "0x7ae7DFB7b72f5b3E1abaec06CA3dcc1eE1D298Aa";
 // ============================================================================
 
 // ID del gruppo Semaphore usato dall'applicazione
-export const FALLBACK_GROUP_ID = 1767789663;
+export const FALLBACK_GROUP_ID = 1768337653;
 // COSA È: Ogni applicazione Semaphore crea un gruppo con un ID univoco
 // COME È GENERATO: Il contratto ZKBoard crea automaticamente un gruppo durante il deploy
 // PERCHÉ SI CHIAMA FALLBACK: In alcune versioni precedenti c'era la possibilità di
@@ -134,7 +134,18 @@ export const ZKBOARD_ABI = [
   },
 
   {
-    // Funzione relayRequests(uint256 requestId) → (merkleTreeRoot, nullifierHash, message, relayFee, requester, executed)
+    // Funzione messageCounter() → uint256
+    // Restituisce il contatore globale usato come externalNullifier
+    // Permette alla stessa identità di postare messaggi multipli
+    "inputs": [],
+    "name": "messageCounter",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+
+  {
+    // Funzione relayRequests(uint256 requestId) → (merkleTreeRoot, nullifierHash, message, relayFee, requester, executed, messageIndex)
     // Restituisce i dati di una richiesta di relay
     "inputs": [{ "internalType": "uint256", "name": "requestId", "type": "uint256" }],
     "name": "relayRequests",
@@ -154,6 +165,8 @@ export const ZKBOARD_ABI = [
       // requester: indirizzo di chi ha creato la richiesta
       { "internalType": "bool", "name": "executed", "type": "bool" },
       // executed: true se già eseguita, false se ancora pending
+      { "internalType": "uint256", "name": "messageIndex", "type": "uint256" },
+      // messageIndex: indice usato come externalNullifier per questa proof
     ],
     "stateMutability": "view",
     "type": "function"
@@ -211,14 +224,15 @@ export const ZKBOARD_ABI = [
   },
 
   {
-    // Funzione createRelayRequest(merkleTreeRoot, nullifierHash, proof, message, relayFee)
+    // Funzione createRelayRequest(merkleTreeRoot, nullifierHash, proof, message, relayFee, messageIndex)
     // Crea una richiesta di relay (l'utente NON paga il gas di verifica proof)
     "inputs": [
       { "internalType": "uint256", "name": "merkleTreeRoot", "type": "uint256" },
       { "internalType": "uint256", "name": "nullifierHash", "type": "uint256" },
       { "internalType": "uint256[8]", "name": "proof", "type": "uint256[8]" },
       { "internalType": "string", "name": "message", "type": "string" },
-      { "internalType": "uint256", "name": "relayFee", "type": "uint256" }
+      { "internalType": "uint256", "name": "relayFee", "type": "uint256" },
+      { "internalType": "uint256", "name": "messageIndex", "type": "uint256" }
     ],
     "name": "createRelayRequest",
     "outputs": [],
@@ -226,10 +240,11 @@ export const ZKBOARD_ABI = [
     "type": "function"
     // USO: Per utenti senza ETH (o che vogliono rimanere anonimi)
     // PROCESSO:
-    // 1. Genera proof ZK client-side
-    // 2. Chiama createRelayRequest con proof + messaggio + fee offerta
-    // 3. Contratto salva la richiesta (NON verifica ancora la proof!)
-    // 4. Un relayer chiamerà executeRelay(requestId) più tardi
+    // 1. Legge messageCounter dalla blockchain
+    // 2. Genera proof ZK client-side con messageCounter come externalNullifier
+    // 3. Chiama createRelayRequest con proof + messaggio + fee + messageIndex
+    // 4. Contratto salva la richiesta (NON verifica ancora la proof!)
+    // 5. Un relayer chiamerà executeRelay(requestId) più tardi
     // GAS: ~50k gas (molto meno di postMessage!)
     // RICHIEDE: credits >= 1 (l'utente deve avere depositato ETH)
   },

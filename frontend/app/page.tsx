@@ -349,7 +349,7 @@ export default function Home() {
   // ═══════════════════════════════════════════════════════════════════
 
   /*
-   * EFFECT 1: Carica identità da localStorage all'avvio
+   * EFFECT 1: Carica identità da localStorage e redirect se già registrato
    *
    * QUANDO ESEGUE:
    * - Una sola volta, al mount del componente
@@ -357,20 +357,22 @@ export default function Home() {
    *
    * COSA FA:
    * 1. Legge 'ZK_USER_ID' da localStorage
-   * 2. Se esiste, salva in state existingId
-   * 3. UI mostrerà "Register Identity" invece di "Create & Join"
+   * 2. Se esiste, redirect automatico alla board
+   * 3. La board verificherà se l'identità è nel gruppo on-chain
    *
    * PERCHÉ:
-   * Se l'utente ha già generato un'identità ma non l'ha ancora
-   * registrata on-chain, la riusiamo invece di crearne una nuova.
+   * Se l'utente ha già un'identità salvata, probabilmente è già
+   * registrato e vuole accedere direttamente alla board.
    */
   useEffect(() => {
     // localStorage.getItem() ritorna null se chiave non esiste
     const saved = localStorage.getItem('ZK_USER_ID');
 
-    // Se esiste, salva nello state
-    if (saved) setExistingId(saved);
-  }, []); // [] = esegui solo una volta al mount
+    // Se esiste un'identità, redirect alla board
+    if (saved) {
+      router.push('/board');
+    }
+  }, [router]); // Dipendenza da router
 
   /*
    * EFFECT 2: Reset step se transaction fallisce

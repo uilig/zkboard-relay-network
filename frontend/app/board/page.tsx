@@ -641,7 +641,22 @@ function BoardContent() {
       }
 
       // ─────────────────────────────────────────────────────────────────
-      // STEP 7: PREPARA INPUT DEL CIRCUITO
+      // STEP 7: LEGGI MESSAGE COUNTER DALLA BLOCKCHAIN
+      // ─────────────────────────────────────────────────────────────────
+
+      /*
+       * Leggiamo messageCounter dal contratto per usarlo come externalNullifier.
+       * Questo permette alla stessa identità di postare messaggi multipli,
+       * generando un nullifierHash diverso per ogni messaggio.
+       */
+      const currentMessageCounter = await publicClient?.readContract({
+        address: ZKBOARD_ADDRESS,
+        abi: ZKBOARD_ABI,
+        functionName: 'messageCounter',
+      }) as bigint;
+
+      // ─────────────────────────────────────────────────────────────────
+      // STEP 8: PREPARA INPUT DEL CIRCUITO
       // ─────────────────────────────────────────────────────────────────
 
       /*
@@ -655,7 +670,7 @@ function BoardContent() {
        *
        * INPUT PUBBLICI (public signals):
        * - signalHash: hash del messaggio
-       * - externalNullifier: contesto del segnale (usiamo groupId)
+       * - externalNullifier: messageCounter (permette messaggi multipli)
        *
        * NOTA: merkleTreeRoot viene calcolato DAL CIRCUITO usando
        * identityCommitment + treePathIndices + treeSiblings.
@@ -673,8 +688,8 @@ function BoardContent() {
         // Signal pubblico
         signalHash: signal.toString(),
 
-        // External nullifier (usiamo groupId come contesto)
-        externalNullifier: FALLBACK_GROUP_ID.toString(),
+        // External nullifier (usiamo messageCounter per permettere messaggi multipli)
+        externalNullifier: currentMessageCounter.toString(),
       };
 
       // ─────────────────────────────────────────────────────────────────
@@ -785,12 +800,15 @@ function BoardContent() {
        * 3. proof: Array di 8 uint256 (proof Groth16)
        * 4. message: Testo del messaggio
        * 5. relayFee: Fee per il relayer (in wei)
+       * 6. messageIndex: Indice del messaggio (= messageCounter letto prima)
        *
        * COSA SUCCEDE ON-CHAIN:
-       * 1. Contratto salva la RelayRequest nello storage
-       * 2. Assegna ID incrementale alla request
-       * 3. Emette evento RelayRequestCreated
-       * 4. Relayer vede l'evento e può eseguire la request
+       * 1. Contratto verifica messageIndex == messageCounter
+       * 2. Contratto salva la RelayRequest nello storage
+       * 3. Incrementa messageCounter per il prossimo messaggio
+       * 4. Assegna ID incrementale alla request
+       * 5. Emette evento RelayRequestCreated
+       * 6. Relayer vede l'evento e può eseguire la request
        *
        * GAS COST: ~50k gas (molto basso!)
        * Il costo è basso perché NON verifichiamo la proof ora.
@@ -805,7 +823,8 @@ function BoardContent() {
           nullifierHash,            // uint256 nullifierHash
           proofArray,               // uint256[8] proof
           message,                  // string message
-          parseEther(relayFee)      // uint256 relayFee (converti ETH → wei)
+          parseEther(relayFee),     // uint256 relayFee (converti ETH → wei)
+          currentMessageCounter     // uint256 messageIndex
         ],
       });
 
