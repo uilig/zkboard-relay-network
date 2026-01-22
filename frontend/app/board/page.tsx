@@ -831,10 +831,10 @@ function BoardContent() {
          * 5. messageIndex: Indice del messaggio (= messageCounter letto prima)
          *
          * COSA SUCCEDE ON-CHAIN:
-         * 1. Contratto verifica credits > 0
+         * 1. Contratto verifica deposits >= COST_PER_MESSAGE
          * 2. Contratto verifica messageIndex == messageCounter
          * 3. Contratto verifica la ZK proof (chiamata a Semaphore.verifyProof)
-         * 4. Se valida: marca nullifier usato, scala crediti, incrementa counter
+         * 4. Se valida: marca nullifier usato, scala deposito, incrementa counter
          * 5. Emette evento MessagePosted
          * 6. Messaggio pubblicato SUBITO!
          *
@@ -1352,27 +1352,33 @@ export default function Board() {
  *    - Utente crea request (~50k gas)
  *    - Relayer esegue request (~400k gas)
  *    - Relayer riceve fee come incentivo
- *    - Massima privacy: wallet diverso esegue la transaction
+ *    - NOTA: L'indirizzo del requester è comunque visibile on-chain
  *
- * SICUREZZA:
+ * SICUREZZA E PRIVACY:
  *
- * 1. PRIVACY IDENTITÀ:
+ * 1. COSA È PROTETTO (Identity Commitment):
  *    - Nullifier e trapdoor MAI inviati on-chain
  *    - Solo commitment e nullifierHash pubblici
  *    - Impossibile risalire da nullifierHash a nullifier (hash)
- *    - Impossibile collegare messaggio a identità
+ *    - Impossibile collegare messaggio a identity commitment
  *
- * 2. PREVENZIONE DOUBLE-POSTING:
+ * 2. COSA NON È PROTETTO (Ethereum Address):
+ *    - L'indirizzo Ethereum è SEMPRE visibile on-chain
+ *    - In createRelayRequest: campo "requester"
+ *    - In postMessageDirect: msg.sender
+ *    - Chiunque può correlare indirizzo → messaggio via blockchain
+ *
+ * 3. PREVENZIONE DOUBLE-POSTING:
  *    - nullifierHash tracciato on-chain
  *    - Ogni identità può postare UNA VOLTA per externalNullifier
  *    - Tentativo double-post → transaction revert
  *
- * 3. VERIFICA APPARTENENZA:
+ * 4. VERIFICA APPARTENENZA:
  *    - Proof ZK verifica che identità sia nel gruppo
  *    - Merkle root deve matchare on-chain
  *    - Impossibile falsificare appartenenza
  *
- * 4. INTEGRITÀ MESSAGGIO:
+ * 5. INTEGRITÀ MESSAGGIO:
  *    - Signal legato crittograficamente alla proof
  *    - Impossibile modificare messaggio dopo proof generation
  *    - Verifier controlla signal nella proof

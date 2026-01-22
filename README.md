@@ -26,7 +26,7 @@ ZKBoard is a **decentralized public bulletin board** that allows users to post m
 
 - **Anonymous Posting**: Messages are anonymous thanks to ZK-SNARK proofs
 - **Dual Posting Mode**: Post directly or use the relay system
-- **Deposit-Based System**: Users deposit ETH to get message credits (recoverable)
+- **Deposit-Based System**: Users deposit ETH to post messages (recoverable)
 - **Multi-Message Support**: Same identity can post multiple unlinkable messages
 - **On-Chain Storage**: All messages permanently stored on Ethereum Sepolia
 - **Modern UI**: Clean, responsive interface built with Next.js and TailwindCSS
@@ -176,7 +176,7 @@ Open [http://localhost:3000](http://localhost:3000)
 ### 1. Registration
 
 - User connects wallet and generates a Semaphore identity (stored locally in browser)
-- Deposits minimum 0.05 ETH (approximately 50 message credits)
+- Deposits minimum 0.05 ETH (approximately 50 messages available)
 - Identity commitment is added to the Semaphore group on-chain
 
 ### 2. Posting Messages
