@@ -1,44 +1,42 @@
 /*
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                            🔄 RELAY DASHBOARD                                  ║
-║                                                                                ║
+║                            🔄 RELAY DASHBOARD                                 ║
+║                                                                               ║
 ║  Pagina per i RELAYER: utenti che eseguono le richieste di relay per conto    ║
 ║  di altri utenti che non hanno ETH per pagare il gas.                         ║
-║                                                                                ║
-║  SCOPO:                                                                        ║
+║                                                                               ║
+║  SCOPO:                                                                       ║
 ║  - Mostrare tutte le richieste di relay pending (non ancora eseguite)         ║
 ║  - Permettere ai relayer di eseguirle cliccando un bottone                    ║
 ║  - I relayer pagano il gas (~0.0015 ETH) ma guadagnano la relay fee (~0.001)  ║
-║                                                                                ║
+║                                                                               ║
 ║  FUNZIONAMENTO DEL SISTEMA DI RELAY:                                          ║
-║                                                                                ║
+║                                                                               ║
 ║  1. UTENTE SENZA ETH:                                                         ║
 ║     - Ha un'identità Semaphore e vuole postare                                ║
 ║     - Genera la proof ZK (client-side, gratis)                                ║
 ║     - Chiama createRelayRequest() invece di postMessage()                     ║
 ║     - La richiesta viene salvata on-chain (gas basso: ~50k)                   ║
-║                                                                                ║
+║                                                                               ║
 ║  2. RELAYER (questa pagina):                                                  ║
 ║     - Monitora le richieste pending                                           ║
 ║     - Vede la relay fee offerta                                               ║
 ║     - Sceglie quale eseguire (ordinate per fee decrescente)                   ║
 ║     - Chiama executeRelay(requestId) pagando il gas                           ║
 ║     - Guadagna la relay fee come compenso                                     ║
-║                                                                                ║
+║                                                                               ║
 ║  3. CONTRATTO:                                                                ║
-║     - Verifica la proof ZK (questa è la parte costosa!)                       ║
+║     - Verifica la proof ZK                                                    ║
 ║     - Emette l'evento MessagePosted                                           ║
 ║     - Trasferisce la fee al relayer                                           ║
 ║     - Marca la richiesta come executed                                        ║
-║                                                                                ║
+║                                                                               ║
 ║  INCENTIVI ECONOMICI:                                                         ║
 ║  Gas per relay: ~400k gas = ~0.0015 ETH (a 15 gwei)                           ║
 ║  Fee tipica: 0.001 ETH                                                        ║
 ║  Profitto: -0.0005 ETH (perdita!)                                             ║
-║                                                                                ║
-║  NOTA: In questo progetto educativo la fee è sottocosto. In produzione        ║
-║  dovrebbe essere ~0.002 ETH per essere profittevole.                          ║
-║                                                                                ║
+║                                                                               ║
+║                                                                               ║
 ║  FILE: frontend/app/relay/page.tsx                                            ║
 ║  DIPENDENZE: Wagmi v2, RainbowKit, API route /api/relay-request               ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
@@ -92,24 +90,24 @@ interface RelayRequest {
 // COMPONENTE PRINCIPALE: RelayPage
 // ============================================================================
 
-export default function RelayPage() {
+export default function RelayPage() {  // Qui inizia la logica a runtime
 
   // --------------------------------------------------------------------------
   // STATO LOCALE (useState)
   // --------------------------------------------------------------------------
 
   // Hook Wagmi per ottenere l'account connesso
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useAccount();  // destructuring assignment --> useAccount() restituisce un oggetto che prende la proprietà di address e la mette in address e fa lo stesso per isConnected
   // address: l'indirizzo Ethereum connesso (es: "0x1234...")
   // isConnected: true se il wallet è connesso, false altrimenti
 
   // Array delle richieste di relay caricate dalla blockchain
-  const [requests, setRequests] = useState<RelayRequest[]>([]);
+  const [requests, setRequests] = useState<RelayRequest[]>([]);  // In questo caso sto dicendo che useState ritorna una coppia di <requests, setRequests> e che requests è un array di RelayRequest inizialmente vuoto
   // Questo array contiene SOLO le richieste pending (executed=false)
   // Viene popolato dalla funzione loadRequests() che chiama l'API
 
   // Contatore di quante richieste abbiamo relayed in questa sessione
-  const [relayedCount, setRelayedCount] = useState(0);
+  const [relayedCount, setRelayedCount] = useState(0);  // Inizializzo a 0 relayedCount
   // Viene incrementato quando una transazione di relay ha successo
   // Serve solo per la UI (statistiche), non è salvato da nessuna parte
 
@@ -118,7 +116,7 @@ export default function RelayPage() {
   // --------------------------------------------------------------------------
 
   // Hook Wagmi per leggere il valore di nextRequestId dal contratto
-  const { data: nextRequestId, refetch: refetchNextId } = useReadContract({
+  const { data: nextRequestId, refetch: refetchNextId } = useReadContract({  // Prendi la proprietà data e salvala in una variabile chiamata nextRequestId, prendi la proprietà refetch e salvala in una variabile chiamata refetchNextId. Stessa cosa per refetchNextId. useReadContract() restituisce un oggetto con più proprietà
     address: ZKBOARD_ADDRESS,           // Indirizzo del contratto ZKBoard
     abi: ZKBOARD_ABI,                   // ABI del contratto (per sapere come chiamare le funzioni)
     functionName: 'nextRequestId',      // Nome della funzione da chiamare (view function)
@@ -141,7 +139,7 @@ export default function RelayPage() {
   // --------------------------------------------------------------------------
 
   // Hook Wagmi per scrivere sul contratto (chiamare executeRelay)
-  const { data: relayHash, writeContract, isPending } = useWriteContract();
+  const { data: relayHash, writeContract, isPending } = useWriteContract();  // Faccio un deconstructing di un oggetto e mi restituisce un oggetto dal quale estraggo 3 proprietà : writeContract e isPending li estraggo con lo stesso nome, data lo rinomino in relayHash
   // relayHash: hash della transazione dopo che è stata inviata (tipo: `0x${string}` | undefined)
   // writeContract: funzione per inviare una transazione
   // isPending: true mentre la transazione è in pending (tra invio e conferma)
@@ -158,7 +156,7 @@ export default function RelayPage() {
   // --------------------------------------------------------------------------
 
   // Hook Wagmi per attendere che la transazione di relay venga confermata
-  const { isSuccess } = useWaitForTransactionReceipt({
+  const { isSuccess } = useWaitForTransactionReceipt({  // Prendo la proprietà isSuccess dall'oggetto restituito da useWaitForTransactionReceipt()
     hash: relayHash,    // Hash della transazione da attendere
     onSuccess() {
       // Callback eseguita quando la transazione è confermata (inclusa in un blocco)
@@ -197,8 +195,6 @@ export default function RelayPage() {
   // - L'evento RelayRequestCreated viene emesso
   // - Wagmi lo riceve via WebSocket (se disponibile) o polling
   // - onLogs() viene eseguita → la UI si aggiorna automaticamente
-
-  // NOTA: Questo rende la dashboard "real-time" senza bisogno di refresh manuale!
 
   // --------------------------------------------------------------------------
   // FUNZIONE: loadRequests
