@@ -729,6 +729,9 @@ contract ZKBoard {
         // Scala 1 credito all'utente
         credits[msg.sender]--;
 
+        // Scala il costo del messaggio dal deposito ETH
+        deposits[msg.sender] -= COST_PER_MESSAGE;
+
         // Incrementa il messageCounter per il prossimo messaggio
         // Questo cambia l'externalNullifier per le prossime proof
         messageCounter++;
