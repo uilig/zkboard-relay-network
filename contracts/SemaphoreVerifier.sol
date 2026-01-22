@@ -5,5 +5,5 @@ pragma solidity ^0.8.20;
 import "@semaphore-protocol/contracts/base/SemaphoreVerifier.sol";
 
 contract RealVerifier is SemaphoreVerifier {
-    // Non serve logica aggiuntiva, ereditiamo tutto.
+
 }

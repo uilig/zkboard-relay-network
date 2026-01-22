@@ -34,7 +34,7 @@
  * - Impossibile collegare messaggio a identità
  */
 
-'use client';
+'use client';  // Vuol dire che questo componente gira nel browser (quindi può usare localStorage, useEffect, ecc.)
 
 // ═══════════════════════════════════════════════════════════════════════
 // IMPORTS
@@ -127,13 +127,13 @@ import DepositManager from '../components/DepositManager';
  * NOTA: I messaggi NON sono salvati in un array on-chain,
  * ma solo negli eventi MessagePosted. L'API li legge dagli eventi.
  */
-interface Message {
+interface Message {  // Message è il formato che l'API restituisce
   text: string;        // Contenuto del messaggio
   timestamp: number;   // Unix timestamp (secondi)
 }
 
 /**
- * PostingStep - Stati del processo di posting
+ * PostingStep - Stati del processo di posting. Serve per aggiornare UI e disabilitare input durante i passaggi.
  *
  * FLUSSO:
  * idle → generating_proof → awaiting_signature → request_submitted → success → idle
@@ -166,8 +166,8 @@ function BoardContent() {
   // HOOKS SETUP
   // ═══════════════════════════════════════════════════════════════════
 
-  const router = useRouter();
-  const { address } = useAccount();
+  const router = useRouter();  // Serve per router.push('/') se l'utente non ha identità salvata
+  const { address } = useAccount();  // address è l'indirizzo del wallet connesso
 
   // ═══════════════════════════════════════════════════════════════════
   // STATE MANAGEMENT
@@ -176,7 +176,7 @@ function BoardContent() {
   /*
    * message - Testo del messaggio che l'utente sta scrivendo
    */
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('');  // Messaggio vuoto di default. 
 
   /*
    * isReady - Flag che indica se l'identità è sincronizzata con blockchain
@@ -187,7 +187,7 @@ function BoardContent() {
    * IMPORTANTE: Dobbiamo aspettare isReady=true prima di generare proof,
    * altrimenti la proof generation potrebbe fallire (identità non nel tree).
    */
-  const [isReady, setIsReady] = useState(false);
+  const [isReady, setIsReady] = useState(false);  // useState crea una variabile di stato inizializzata a falso. Ritorna una coppia [valore corrente dello stato, funzione per aggiornarlo]. Quindi isReady è il valore corrente (booleano) e setIsReady è la funzione per aggiornarlo.
 
   /*
    * identity - Identità Semaphore dell'utente
@@ -202,21 +202,21 @@ function BoardContent() {
    *   commitment: BigInt (pubblico, = poseidon(nullifier, trapdoor))
    * }
    */
-  const [identity, setIdentity] = useState<Identity | null>(null);
+  const [identity, setIdentity] = useState<Identity | null>(null);  // identity è lo stato che contiene l'identità Semaphore dell'utente. setIdentity è la funzione per aggiornarlo. useState scritto in quel modo dice : questo stato potrà contenere o un oggetto di tipo identity oppure null. All'inizio vale null (nessuna identità caricata).
 
   /*
    * messages - Array di messaggi caricati dalla board
    *
    * Aggiornato ogni 15 secondi tramite polling all'API /api/logs
    */
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);  // Creo uno stato React che contiene un array di Message, inizialmente vuoto. Con Message[] voglio dire che questo state sarà sempre un array di oggetti Message. Quindi messages : Message[] e setMessages funzione per aggiornare quell'array
 
   /*
    * postingStep - Stato corrente del processo di posting
    *
    * Usato per mostrare feedback UI all'utente e disabilitare form
    */
-  const [postingStep, setPostingStep] = useState<PostingStep>('idle');
+  const [postingStep, setPostingStep] = useState<PostingStep>('idle');  // Creo uno stato React chiamato postinngStep che può assumere solo uno dei valori definiti dal tipo PostingStep e lo inizializza a idle
 
   /*
    * relayFee - Fee da pagare al relayer (in ETH)
@@ -229,15 +229,36 @@ function BoardContent() {
    *
    * NOTA: La fee viene pagata dal contratto al relayer quando esegue.
    * Non viene addebitata direttamente all'utente (viene dal deposito).
+   * Usato SOLO quando postingMode === 'relay'.
    */
-  const [relayFee, setRelayFee] = useState('0.001');
+  const [relayFee, setRelayFee] = useState('0.001');  // Creo uno stato React chiamato relayFee che contiene una stringa inizialmente a 0.001. è una stringa perchè arriva da un input <HTML> e gli input in React gestiscono i valori come stringhe
+
+  /*
+   * postingMode - Modalità di posting scelta dall'utente
+   *
+   * 'direct': Post diretto (1 transazione, utente paga gas, no relay fee)
+   * 'relay': Post via relay (2 transazioni, relayer paga gas verifica, relay fee richiesta)
+   *
+   * CONFRONTO:
+   * ┌─────────────────────────────────────────────────────────────────┐
+   * │  DIRECT POST              │  RELAY POST                        │
+   * ├─────────────────────────────────────────────────────────────────┤
+   * │  1 transazione            │  2 transazioni                     │
+   * │  Utente paga gas (~400k)  │  Utente paga ~50k + relay fee      │
+   * │  Nessuna fee extra        │  Relay fee richiesta               │
+   * │  Più veloce               │  Dipende dal relayer               │
+   * └─────────────────────────────────────────────────────────────────┘
+   *
+   * Default: 'direct' perché è più semplice e veloce
+   */
+  const [postingMode, setPostingMode] = useState<'direct' | 'relay'>('direct');
 
   /*
    * WAGMI HOOKS
    */
   const publicClient = usePublicClient();
-  const { data: hash, writeContract, isPending, error: writeError } = useWriteContract();
-  const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
+  const { data: hash, writeContract, isPending, error: writeError } = useWriteContract();  // writeContract è la funzione per inviare una tx, in data : hash compare l'hash della tx, isPending mentre wallet sta firmando / tx sta partendo, writeError per errori
+  const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });  // quando hash esiste, wagmi inizia a seguire la tx finchè ha un receipt. isConfirmed diventa true quando è confermata
 
   // ═══════════════════════════════════════════════════════════════════
   // LOAD MESSAGES
@@ -260,17 +281,17 @@ function BoardContent() {
    * Memoizza la funzione per evitare re-creazione a ogni render.
    * Importante perché questa funzione è dependency di un useEffect.
    */
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async () => {  // useCallback così la funzione ha identità stabile tra i render 
     try {
       // Chiama API senza cache (sempre fresh data)
-      const response = await fetch('/api/logs', { cache: 'no-store' });
+      const response = await fetch('/api/logs', { cache: 'no-store' });  // Non memorizzo mai i dati perchè voglio sempre i dati freschi e aggiornati
       const data = await response.json();
 
       // Verifica che data.messages sia un array valido
-      if (data.messages && Array.isArray(data.messages)) {
-        setMessages(data.messages);
+      if (data.messages && Array.isArray(data.messages)) {  // Se data.messages è un array...
+        setMessages(data.messages);  // ... aggiorna lo stato React con i messaggi caricati
       }
-    } catch (error) {
+    } catch (error) {  // Se fallisce faccio log e basta
       console.error('Error loading messages:', error);
       // Non facciamo nulla, riproveremo tra 15 secondi
     }
@@ -292,10 +313,10 @@ function BoardContent() {
    */
   useEffect(() => {
     // Caricamento iniziale
-    loadMessages();
+    loadMessages();  // Carico subito i messaggi al mount del componente
 
     // Setup polling ogni 15 secondi
-    const interval = setInterval(loadMessages, 15000);
+    const interval = setInterval(loadMessages, 15000);  // Ogni 15 secondi richiamo sempre la stessa funzione
 
     // Cleanup: ferma polling quando componente viene rimosso
     return () => clearInterval(interval);
@@ -309,14 +330,14 @@ function BoardContent() {
    * EFFECT 2: Reset step se errore
    */
   useEffect(() => {
-    if (writeError) setPostingStep('idle');
+    if (writeError) setPostingStep('idle');  // Torno a idle se c'è un errore --> utente cancella la firma, tx revert, errore RPC
   }, [writeError]);
 
   /**
    * EFFECT 3: Aggiorna step quando hash disponibile
    */
   useEffect(() => {
-    if (hash) setPostingStep('request_submitted');
+    if (hash) setPostingStep('request_submitted');  // Se compare l'hash allora vuol dire che sono in request_submitted --> vuol dire che la tx è stata inviata e quindi ha un hash. Sono oltre la fase della firma
   }, [hash]);
 
   /**
@@ -325,7 +346,7 @@ function BoardContent() {
    * Quando transaction confermata:
    * 1. Mostra "Success" per 3 secondi
    * 2. Reset form
-   * 3. Ricarica messaggi
+   * 3. Ricarica messaggi in modo che compare quello appena pubblicato
    */
   useEffect(() => {
     if (isConfirmed) {
@@ -365,12 +386,12 @@ function BoardContent() {
    * Non usa setInterval perché vogliamo aspettare il completamento
    * della chiamata API prima di fare la prossima.
    */
-  const syncWithApi = useCallback(async (id: Identity) => {
+  const syncWithApi = useCallback(async (id: Identity) => {  // Risolve il problema della Race Condition tra registrazione e posting. Se provo a generare un proof troppo presto, si rischia che il commitment appena registrato non sia ancora nel Merkle Tree locale, quindi la proof fallisce
     try {
       // Ottieni il commitment pubblico di questa identità
       const myCommitment = id.commitment.toString();
 
-      // Chiama API per lista membri
+      // Chiama API per lista membri (data.members)
       const response = await fetch('/api/logs', { cache: 'no-store' });
       const data = await response.json();
 
@@ -425,7 +446,7 @@ function BoardContent() {
 
     try {
       // STEP 2: Ricostruisci Identity object
-      const id = new Identity(saved);
+      const id = new Identity(saved);  // Ricostruisco l'oggetto con segreti
 
       // STEP 3: Verifica che Identity sia valida
       // Alcune versioni della libreria Semaphore usano nomi diversi:
@@ -537,7 +558,7 @@ function BoardContent() {
        */
       const index = group.indexOf(identity.commitment);
 
-      if (index === -1) {
+      if (index === -1) {setPostingStep('generating_proof');
         throw new Error('Your identity is not in the local group. Please reload.');
       }
 
@@ -648,6 +669,7 @@ function BoardContent() {
        * Leggiamo messageCounter dal contratto per usarlo come externalNullifier.
        * Questo permette alla stessa identità di postare messaggi multipli,
        * generando un nullifierHash diverso per ogni messaggio.
+       * Serve per controllare l'unicità del nullifier in un certo contesto (in questo caso il numero di messaggi presenti sulla board)
        */
       const currentMessageCounter = await publicClient?.readContract({
         address: ZKBOARD_ADDRESS,
@@ -732,6 +754,8 @@ function BoardContent() {
         new Uint8Array(zkeyBuffer)  // Proving key
       );
 
+      // fullProve ritorna come oggetto due campi : proof Groth16 e publicSignals l'array dei segnali pubblici del circuito
+
       // ─────────────────────────────────────────────────────────────────
       // STEP 9: CONVERTI PROOF IN FORMATO SOLIDITY
       // ─────────────────────────────────────────────────────────────────
@@ -775,58 +799,98 @@ function BoardContent() {
        * - onChainRoot DEVE matchare il root del gruppo on-chain
        * - nullifierHash DEVE essere univoco (previene double-posting)
        */
-      const onChainRoot = group.root;           // Root locale (deve matchare on-chain)
-      const nullifierHash = BigInt(publicSignals[1]); // Nullifier hash dalla proof
+      const onChainRoot = group.root;           // Root locale del tree locale (deve matchare on-chain). Serve perchè il verifier quando verificherà la proof deve sapere quale root si sta provando
+      const nullifierHash = BigInt(publicSignals[1]); // Nullifier hash dalla proof. PublicSignals me lo restituisce snarkjs quando vado a generare la proof. Serve per impedire che la stessa identità riusi la stessa azione nel contesto definito dall'externalNullifier
 
       // ─────────────────────────────────────────────────────────────────
-      // STEP 11: CREA RELAY REQUEST ON-CHAIN
+      // STEP 11: INVIA TRANSAZIONE ON-CHAIN (DIRECT O RELAY)
       // ─────────────────────────────────────────────────────────────────
 
       /*
-       * Ora abbiamo tutto per creare la relay request!
+       * Ora abbiamo tutto per postare il messaggio!
        *
        * setPostingStep('awaiting_signature'):
        * - UI mostra "Confirm in wallet"
        * - Utente deve approvare transaction
+       *
+       * A seconda di postingMode, chiamiamo funzioni diverse:
+       * - 'direct': postMessageDirect() - verifica proof e posta in 1 tx
+       * - 'relay': createRelayRequest() - salva request, relayer eseguirà dopo
        */
       setPostingStep('awaiting_signature');
 
-      /*
-       * createRelayRequest() - Chiamata al contratto ZKBoard
-       *
-       * PARAMETRI:
-       * 1. merkleTreeRoot: Root del tree (per verifica proof)
-       * 2. nullifierHash: Previene double-posting
-       * 3. proof: Array di 8 uint256 (proof Groth16)
-       * 4. message: Testo del messaggio
-       * 5. relayFee: Fee per il relayer (in wei)
-       * 6. messageIndex: Indice del messaggio (= messageCounter letto prima)
-       *
-       * COSA SUCCEDE ON-CHAIN:
-       * 1. Contratto verifica messageIndex == messageCounter
-       * 2. Contratto salva la RelayRequest nello storage
-       * 3. Incrementa messageCounter per il prossimo messaggio
-       * 4. Assegna ID incrementale alla request
-       * 5. Emette evento RelayRequestCreated
-       * 6. Relayer vede l'evento e può eseguire la request
-       *
-       * GAS COST: ~50k gas (molto basso!)
-       * Il costo è basso perché NON verifichiamo la proof ora.
-       * La verifica (~400k gas) verrà fatta dal relayer in executeRelay().
-       */
-      writeContract({
-        address: ZKBOARD_ADDRESS,
-        abi: ZKBOARD_ABI,
-        functionName: 'createRelayRequest',
-        args: [
-          onChainRoot,              // uint256 merkleTreeRoot
-          nullifierHash,            // uint256 nullifierHash
-          proofArray,               // uint256[8] proof
-          message,                  // string message
-          parseEther(relayFee),     // uint256 relayFee (converti ETH → wei)
-          currentMessageCounter     // uint256 messageIndex
-        ],
-      });
+      if (postingMode === 'direct') {
+        /*
+         * postMessageDirect() - Post diretto senza relay
+         *
+         * PARAMETRI:
+         * 1. merkleTreeRoot: Root del tree (per verifica proof)
+         * 2. nullifierHash: Previene double-posting
+         * 3. proof: Array di 8 uint256 (proof Groth16)
+         * 4. message: Testo del messaggio
+         * 5. messageIndex: Indice del messaggio (= messageCounter letto prima)
+         *
+         * COSA SUCCEDE ON-CHAIN:
+         * 1. Contratto verifica credits > 0
+         * 2. Contratto verifica messageIndex == messageCounter
+         * 3. Contratto verifica la ZK proof (chiamata a Semaphore.verifyProof)
+         * 4. Se valida: marca nullifier usato, scala crediti, incrementa counter
+         * 5. Emette evento MessagePosted
+         * 6. Messaggio pubblicato SUBITO!
+         *
+         * GAS COST: ~400k gas (verifica proof inclusa)
+         * Più costoso in gas, ma più veloce (1 sola transazione)
+         */
+        writeContract({
+          address: ZKBOARD_ADDRESS,
+          abi: ZKBOARD_ABI,
+          functionName: 'postMessageDirect',
+          args: [
+            onChainRoot,              // uint256 merkleTreeRoot
+            nullifierHash,            // uint256 nullifierHash
+            proofArray,               // uint256[8] proof
+            message,                  // string message
+            currentMessageCounter     // uint256 messageIndex
+          ],
+        });
+      } else {
+        /*
+         * createRelayRequest() - Crea richiesta relay
+         *
+         * PARAMETRI:
+         * 1. merkleTreeRoot: Root del tree (per verifica proof)
+         * 2. nullifierHash: Previene double-posting
+         * 3. proof: Array di 8 uint256 (proof Groth16)
+         * 4. message: Testo del messaggio
+         * 5. relayFee: Fee per il relayer (in wei)
+         * 6. messageIndex: Indice del messaggio (= messageCounter letto prima)
+         *
+         * COSA SUCCEDE ON-CHAIN:
+         * 1. Contratto verifica messageIndex == messageCounter
+         * 2. Contratto salva la RelayRequest nello storage
+         * 3. Incrementa messageCounter per il prossimo messaggio
+         * 4. Assegna ID incrementale alla request
+         * 5. Emette evento RelayRequestCreated
+         * 6. Relayer vede l'evento e può eseguire la request
+         *
+         * GAS COST: ~50k gas (molto basso!)
+         * Il costo è basso perché NON verifichiamo la proof ora.
+         * La verifica (~400k gas) verrà fatta dal relayer in executeRelay().
+         */
+        writeContract({
+          address: ZKBOARD_ADDRESS,
+          abi: ZKBOARD_ABI,
+          functionName: 'createRelayRequest',
+          args: [
+            onChainRoot,              // uint256 merkleTreeRoot
+            nullifierHash,            // uint256 nullifierHash
+            proofArray,               // uint256[8] proof
+            message,                  // string message
+            parseEther(relayFee),     // uint256 relayFee (converti ETH → wei)
+            currentMessageCounter     // uint256 messageIndex
+          ],
+        });
+      }
 
     } catch (e: any) {
       /*
@@ -901,6 +965,52 @@ function BoardContent() {
             <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-xl">
               <h2 className="text-xl font-bold text-white mb-4">Compose Message</h2>
 
+              {/* ───────────────────────────────────────────────────
+                  POSTING MODE SELECTION
+                  ─────────────────────────────────────────────── */}
+              <div className="mb-4">
+                <label className="text-xs text-slate-400 mb-2 block">Posting Mode</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Direct Post Button */}
+                  <button
+                    onClick={() => setPostingMode('direct')}
+                    disabled={postingStep !== 'idle'}
+                    className={`p-3 rounded-xl border transition-all duration-200 ${
+                      postingMode === 'direct'
+                        ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300'
+                        : 'bg-slate-900/50 border-slate-700/50 text-slate-400 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 justify-center">
+                      <span className="text-lg">⚡</span>
+                      <span className="font-semibold">Direct Post</span>
+                    </div>
+                    <div className="text-xs mt-1 opacity-70">
+                      1 transaction · You pay gas
+                    </div>
+                  </button>
+
+                  {/* Relay Post Button */}
+                  <button
+                    onClick={() => setPostingMode('relay')}
+                    disabled={postingStep !== 'idle'}
+                    className={`p-3 rounded-xl border transition-all duration-200 ${
+                      postingMode === 'relay'
+                        ? 'bg-violet-600/20 border-violet-500 text-violet-300'
+                        : 'bg-slate-900/50 border-slate-700/50 text-slate-400 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 justify-center">
+                      <span className="text-lg">🔄</span>
+                      <span className="font-semibold">Relay Post</span>
+                    </div>
+                    <div className="text-xs mt-1 opacity-70">
+                      2 transactions · Relayer executes
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               {/* Message Textarea */}
               <textarea
                 value={message}
@@ -911,29 +1021,45 @@ function BoardContent() {
                 disabled={!isReady || postingStep !== 'idle'}
               />
 
-              {/* Relay Fee + Post Button */}
+              {/* Relay Fee (solo se modalità relay) + Post Button */}
               <div className="mt-4 flex items-end gap-4">
-                <div className="flex-1">
-                  <label className="text-xs text-slate-400 mb-2 block">Relay Fee (ETH)</label>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={relayFee}
-                    onChange={(e) => setRelayFee(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors"
-                    disabled={!isReady || postingStep !== 'idle'}
-                  />
-                  <div className="text-xs text-slate-500 mt-1">
-                    Higher fees get relayed faster
+                {/* Relay Fee Input - visibile solo in modalità relay */}
+                {postingMode === 'relay' && (
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-400 mb-2 block">Relay Fee (ETH)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={relayFee}
+                      onChange={(e) => setRelayFee(e.target.value)}
+                      className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none transition-colors"
+                      disabled={!isReady || postingStep !== 'idle'}
+                    />
+                    <div className="text-xs text-slate-500 mt-1">
+                      Higher fees get relayed faster
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Info per Direct Mode */}
+                {postingMode === 'direct' && (
+                  <div className="flex-1">
+                    <div className="text-xs text-slate-400 mb-2 block">Gas Cost</div>
+                    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white">
+                      ~400k gas (proof verification included)
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Message posted immediately after confirmation
+                    </div>
+                  </div>
+                )}
 
                 <button
                   onClick={handlePost}
                   disabled={!isReady || !message.trim() || postingStep !== 'idle'}
                   className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:from-slate-700 disabled:to-slate-700 text-white font-bold py-3 px-8 rounded-xl transition-all duration-200 hover:scale-105 disabled:hover:scale-100 disabled:opacity-50 shadow-lg"
                 >
-                  {postingStep === 'idle' ? 'Post' : 'Processing...'}
+                  {postingStep === 'idle' ? (postingMode === 'direct' ? 'Post Direct' : 'Create Relay Request') : 'Processing...'}
                 </button>
               </div>
 
@@ -955,14 +1081,14 @@ function BoardContent() {
                       <div className="font-bold text-white">
                         {postingStep === 'generating_proof' && 'Generating ZK proof...'}
                         {postingStep === 'awaiting_signature' && 'Confirm in wallet'}
-                        {postingStep === 'request_submitted' && 'Request submitted'}
+                        {postingStep === 'request_submitted' && (postingMode === 'direct' ? 'Posting message...' : 'Request submitted')}
                         {postingStep === 'success' && 'Success!'}
                       </div>
                       <div className="text-sm text-slate-300">
                         {postingStep === 'generating_proof' && 'Creating zero-knowledge proof locally'}
-                        {postingStep === 'awaiting_signature' && 'Approve the relay request transaction'}
-                        {postingStep === 'request_submitted' && 'Waiting for a relayer to process your message'}
-                        {postingStep === 'success' && 'Your message will appear soon'}
+                        {postingStep === 'awaiting_signature' && (postingMode === 'direct' ? 'Approve the direct post transaction' : 'Approve the relay request transaction')}
+                        {postingStep === 'request_submitted' && (postingMode === 'direct' ? 'Verifying proof on-chain and posting message' : 'Waiting for a relayer to process your message')}
+                        {postingStep === 'success' && (postingMode === 'direct' ? 'Your message has been posted!' : 'Your message will appear soon')}
                       </div>
                     </div>
                   </div>
@@ -1047,8 +1173,8 @@ function BoardContent() {
                 <div className="flex items-start gap-3">
                   <span className="text-lg flex-shrink-0">🔄</span>
                   <div>
-                    <div className="font-semibold text-white">Relay System</div>
-                    <div className="text-xs text-slate-400 mt-1">Enhanced privacy through relayers</div>
+                    <div className="font-semibold text-white">Dual Posting</div>
+                    <div className="text-xs text-slate-400 mt-1">Direct post or relay through others</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">

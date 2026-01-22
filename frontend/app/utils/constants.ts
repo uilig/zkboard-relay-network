@@ -31,7 +31,7 @@
 // ============================================================================
 
 // Indirizzo del contratto ZKBoard deployato su Sepolia testnet
-export const ZKBOARD_ADDRESS = "0x2dB01A5BB26d8BBc0795522e784D2f796aAFa963";
+export const ZKBOARD_ADDRESS = "0x02455Eb22168E81851819e61774f301eB9Dd4274";
 // IMPORTANTE: Questo indirizzo è specifico per il deployment su Sepolia
 // Se rideploy il contratto, devi aggiornare questo valore!
 // Per ottenere l'indirizzo dopo il deploy: npx hardhat run scripts/deploy.ts --network sepolia
@@ -41,7 +41,7 @@ export const ZKBOARD_ADDRESS = "0x2dB01A5BB26d8BBc0795522e784D2f796aAFa963";
 // ============================================================================
 
 // ID del gruppo Semaphore usato dall'applicazione
-export const FALLBACK_GROUP_ID = 1768337653;
+export const FALLBACK_GROUP_ID = 1769107490;
 // COSA È: Ogni applicazione Semaphore crea un gruppo con un ID univoco
 // COME È GENERATO: Il contratto ZKBoard crea automaticamente un gruppo durante il deploy
 // PERCHÉ SI CHIAMA FALLBACK: In alcune versioni precedenti c'era la possibilità di
@@ -203,24 +203,32 @@ export const ZKBOARD_ABI = [
   },
 
   {
-    // Funzione postMessage(merkleTreeRoot, nullifierHash, proof, message)
-    // Posta un messaggio direttamente (l'utente paga il gas)
+    // Funzione postMessageDirect(merkleTreeRoot, nullifierHash, proof, message, messageIndex)
+    // Posta un messaggio DIRETTAMENTE senza usare il sistema di relay
+    // L'utente paga il gas della transazione
     "inputs": [
       { "internalType": "uint256", "name": "merkleTreeRoot", "type": "uint256" },
       { "internalType": "uint256", "name": "nullifierHash", "type": "uint256" },
       { "internalType": "uint256[8]", "name": "proof", "type": "uint256[8]" },
-      { "internalType": "string", "name": "message", "type": "string" }
+      { "internalType": "string", "name": "message", "type": "string" },
+      { "internalType": "uint256", "name": "messageIndex", "type": "uint256" }
     ],
-    "name": "postMessage",
+    "name": "postMessageDirect",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
-    // USO: Per utenti che hanno ETH per pagare il gas (~400k gas)
+    // USO: Per utenti che vogliono postare in UNA sola transazione
+    // VANTAGGI rispetto a relay:
+    // - 1 transazione invece di 2
+    // - Nessuna relay fee
+    // - Più veloce (non dipende da un relayer)
     // PROCESSO:
-    // 1. Genera proof ZK client-side
-    // 2. Chiama postMessage con proof + messaggio
-    // 3. Contratto verifica proof
-    // 4. Se valida → emette MessagePosted
+    // 1. Legge messageCounter dalla blockchain
+    // 2. Genera proof ZK client-side con messageCounter come externalNullifier
+    // 3. Chiama postMessageDirect con proof + messaggio + messageIndex
+    // 4. Contratto verifica la proof e pubblica il messaggio
+    // GAS: ~400k gas (verifica proof inclusa)
+    // RICHIEDE: credits >= 1
   },
 
   {

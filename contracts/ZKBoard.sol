@@ -97,11 +97,16 @@ contract ZKBoard {
     // STATE VARIABLES - RELAY SYSTEM
     // ═════════════════════════════════════════════════════════════════
 
+    // Questa parte di codice definisce tutto lo stato (le variabili presenti on-chain) che
+    // serve per far funzionare il sistema depositi -> crediti -> richieste -> relayer
+    
+    // In Solidity il mapping è una struttura dati di tipo dizionario : si associa una chiave a un valore
+
     /// @notice Depositi degli utenti (in wei)
     /// @dev address => amount in ETH depositato
     ///      Questo mapping traccia quanto ETH ha depositato ogni utente
     ///      Il deposito serve a pagare le fee ai relayers
-    mapping(address => uint256) public deposits;
+    mapping(address => uint256) public deposits;  // Per ogni address (chiave) salvo un uint256 (valore) che rappresenta il deposito
 
     /// @notice Crediti messaggi disponibili per ogni utente
     /// @dev address => numero di messaggi che può postare
@@ -116,31 +121,32 @@ contract ZKBoard {
     struct RelayRequest {
         /// @notice Root del Merkle tree al momento della generazione proof
         /// @dev Serve per verificare che l'identità era nel gruppo in quel momento
-        uint256 merkleTreeRoot;
+        uint256 merkleTreeRoot;  // root del MerkleTree del gruppo semaphore nel momento in cui l'utente ha generato la proof. Semaphore verifica la
+        			 // membership rispetto a una root specifica
 
         /// @notice Hash del nullifier per prevenire double-posting
         /// @dev È derivato da: hash(identityNullifier, externalNullifier)
         ///      Ogni identità può usare un nullifier una sola volta
-        uint256 nullifierHash;
+        uint256 nullifierHash;  // è l'ID univoco anti-riuso che serve a impedire che la stessa identità ricicli la stessa prova o lo stesso contesto
 
         /// @notice Array di 8 elementi che costituiscono la proof Groth16
         /// @dev Formato: [pi_a.x, pi_a.y, pi_b.x[0], pi_b.x[1], pi_b.y[0], pi_b.y[1], pi_c.x, pi_c.y]
-        uint256[8] proof;
+        uint256[8] proof;  // proof che semaphore verifica
 
         /// @notice Testo del messaggio da postare
         string message;
 
         /// @notice Fee da pagare al relayer (in wei)
         /// @dev Più alta è la fee, più velocemente verrà eseguita la request
-        uint256 relayFee;
+        uint256 relayFee;  // fee da pagare al relayer per eseguire la request
 
         /// @notice Indirizzo di chi ha creato la request (per tracking e payment)
         /// @dev Questo NON viene esposto pubblicamente nel messaggio finale
-        address requester;
+        address requester;  // Indirizzo di chi ha creato la request. Serve per sapere da chi scalare il deposito quando si paga il relayer
 
         /// @notice Flag che indica se la request è stata eseguita
         /// @dev Previene double-execution della stessa request
-        bool executed;
+        bool executed;  // Una volta eseguita, la request viene marcata come true
 
         /// @notice Indice usato come externalNullifier per questa proof
         /// @dev Permette alla stessa identità di postare messaggi multipli
@@ -149,7 +155,8 @@ contract ZKBoard {
 
     /// @notice Mapping di tutte le relay requests
     /// @dev requestId => RelayRequest struct
-    mapping(uint256 => RelayRequest) public relayRequests;
+    mapping(uint256 => RelayRequest) public relayRequests;  // Creo una tabella chiave - valore per tenere traccia di tutte le relayRequests
+    // Ogni relayRequest che viene fatta viene salvata in storage nello smart contract e quindi vengono registrate on-chain
 
     /// @notice Contatore incrementale per generare ID univoci
     /// @dev Ogni nuova request riceve nextRequestId, poi viene incrementato
@@ -218,6 +225,10 @@ contract ZKBoard {
     // EVENTS
     // ═════════════════════════════════════════════════════════════════
 
+    // Un evento in Solidity è un meccanismo per scrivere log nella blockchain quando succede qualcosa in un contratto.
+    // Non cambia lo stato del contratto, non modifica storage. Serve per far sapere al mondo esterno che è successo qualcosa.
+    // Pensato per il frontend
+
     /// @notice Emesso quando un utente fa un deposito
     event DepositMade(address indexed user, uint256 amount, uint256 newBalance);
 
@@ -257,6 +268,8 @@ contract ZKBoard {
     // CONSTRUCTOR
     // ═════════════════════════════════════════════════════════════════
 
+    // Questo è il costruttore del contratto, ovvero la funzione che viene eseguita una sola volta nel momento in cui viene fatto il deploy del contratto
+
     /**
      * @notice Costruttore del contratto ZKBoard
      * @param _semaphoreAddress Indirizzo del contratto Semaphore deployato
@@ -266,7 +279,7 @@ contract ZKBoard {
      */
     constructor(address _semaphoreAddress, uint256 _groupId) {
         // Salva il riferimento al contratto Semaphore
-        semaphore = ISemaphore(_semaphoreAddress);
+        semaphore = ISemaphore(_semaphoreAddress);  //_semaphoreAddress è l'indirizzo on-chain del contratto semaphore già deployato on-chain. Faccio un cast
 
         // Salva l'ID del gruppo che questa board userà
         groupId = _groupId;
@@ -306,8 +319,7 @@ contract ZKBoard {
         // 3. Potenziali vulnerabilità se il contratto Semaphore non gestisce bene i duplicati
         //
         // MESSAGGIO DI ERRORE:
-        // "Board gia inizializzata" - Messaggio in italiano chiaro per l'utente
-        require(!initialized, "Board gia inizializzata");
+        require(!initialized, "Board gia inizializzata");  // Faccio un controllo e se non passa blocca l'esecuzione della funzione
 
         // STEP 2: Marca il contratto come inizializzato
         //
@@ -361,7 +373,7 @@ contract ZKBoard {
      */
     function joinGroupWithDeposit(uint256 identityCommitment) external payable {
         // Verifica deposito minimo (0.05 ETH)
-        require(msg.value >= MIN_DEPOSIT, "Deposito insufficiente");
+        require(msg.value >= MIN_DEPOSIT, "Deposito insufficiente");  // Accetta la chiamata di questa funzione solo se l'utente ha inviato minimo 0.05 ETH
 
         // Aggiungi l'identityCommitment al gruppo Semaphore
         // Questo permette all'utente di generare proofs future
@@ -370,12 +382,12 @@ contract ZKBoard {
 
         // Aggiorna il deposito dell'utente
         // Usiamo += perché l'utente potrebbe depositare più volte
-        deposits[msg.sender] += msg.value;
+        deposits[msg.sender] += msg.value;  // Tiene traccia dei depositi dell'utente utilizzando l'indirizzo dell'account con cui l'utente ha depositato
 
         // Calcola e assegna crediti
         // Ogni 0.001 ETH = 1 credito
         // Esempio: 0.05 ETH / 0.001 = 50 crediti
-        credits[msg.sender] += msg.value / COST_PER_MESSAGE;
+        credits[msg.sender] += msg.value / COST_PER_MESSAGE;  // Assengno a quell'utente crediti proporzionali al deposito effettuato
 
         // Emetti eventi per tracking
         emit MemberJoined(identityCommitment);
@@ -407,29 +419,42 @@ contract ZKBoard {
      * @dev La proof viene salvata ma verificata solo all'esecuzione
      *      Questo risparmia gas se la request non viene mai eseguita
      */
+     
+     /**
+     * Questa funzione non posta il messaggio e non verifica la proof
+     * Per prima cosa controlla che l'utente abbia i diritti economici per eseguirla
+     * "Prenota" un contesto consumando un credito e avanzando messageCounter
+     * Salva in storage una RelayRequest che un relayer potrà eseguire dopo con executeRelay
+     * é la fase di commit della richiesta
+     */
+     
     function createRelayRequest(
-        uint256 merkleTreeRoot,
-        uint256 nullifierHash,
-        uint256[8] calldata proof,
-        string calldata message,
-        uint256 relayFee,
-        uint256 messageIndex
+        uint256 merkleTreeRoot,  // root rispetto a cui l'utente ha costruito la Merkel Path dentro la proof
+        uint256 nullifierHash,  // valore che sarà unico per identità+externaNullifier
+        uint256[8] calldata proof,  // proof generata dal client
+        string calldata message,  // testo in chiato del messaggio
+        uint256 relayFee,  // fee da pagare al relayer
+        uint256 messageIndex  // externalNullifier che deve essere uguale al contatore globale
     ) external {
         // Verifica che l'utente abbia crediti
         // 1 credito = diritto di postare 1 messaggio
-        require(credits[msg.sender] > 0, "Crediti insufficienti");
+        require(credits[msg.sender] > 0, "Crediti insufficienti");  // Requisito 1 --> i crediti per creare la request devono essere sufficienti
 
         // Verifica che l'utente abbia abbastanza deposito per pagare la fee
-        require(deposits[msg.sender] >= relayFee, "Deposito insufficiente per relay fee");
+        require(deposits[msg.sender] >= relayFee, "Deposito insufficiente per relay fee");  // Requisito 2 --> controllo che l'utente abbia abbastanza ETH
 
         // Verifica che messageIndex corrisponda al messageCounter corrente
         // Questo garantisce che la proof sia stata generata con l'externalNullifier corretto
-        require(messageIndex == messageCounter, "Message index non valido");
-
+        require(messageIndex == messageCounter, "Message index non valido");  // Si usa come externalNullifier messagerCounter che viene passato come msgIndex
+	// Potrebbe creare race condition nel caso in cui più utenti cerchino di creare un messaggio allo stesso tempo. Molte transazioni potrebbero fallire.
+	// Se usassi externalNullifier = groupID come nell'implementazione originale di semaphore, allora un'identità sarebbe limitata al post di 1 solo mex!
+	// Usando messageCounter elimino questo vincolo e la proof è legata al contesto che il contratto considera valido adesso, ovvero messageCounter.
+	
         // Verifica che questo nullifier non sia già stato usato
         // Previene il riuso della stessa proof (double-posting)
-        require(!nullifierHashes[nullifierHash], "Nullifier gia usato");
+        require(!nullifierHashes[nullifierHash], "Nullifier gia usato");  // Evita il riuso di uno stesso nullifierHash
 
+	// Qui passo alle modifiche allo stato del contratto 
         // Decrementa i crediti (consuma 1 credito per questa request)
         credits[msg.sender]--;
 
@@ -481,13 +506,32 @@ contract ZKBoard {
      * @dev Questa funzione è "permissionless" - chiunque può chiamarla
      *      Questo rende il sistema decentralizzato: non serve un relayer specifico
      */
+     
+     /*
+      * Questa funzione :
+      *	- prende una relayRequest salvata in storage 
+      * - verifica la ZK Proof (Semaphore)
+      * - se valida marca il nullifier come usato, paga il relayer, emette l'evento del messaggio
+      * - è permissionless, chiunque che sia nel gruppo può chiamarla.
+     */
+     
     function executeRelay(uint256 requestId) external {
         // Carica la request dallo storage (storage pointer per efficienza)
         RelayRequest storage request = relayRequests[requestId];
+        /*
+         * relayRequest è un mapping(uint256 => RelayRequest)
+         * RelayRequest[requestId] recupera la struct RelayRequest salvata in storage a quella chiave 
+         * Con RelayRequest storage request creo una variabile locale chiamata request che è un riferimento allo storage 
+         * Perchè usare storage? 
+         * - evitare di riscrivere relayRequests[requestId].campo ogni volta
+         * - evitare copie in memoria (con memory avresti una copia e poi dovresti riscriverla nello storage a mano)
+        */
 
         // Verifica che la request esista e non sia già stata eseguita
-        require(!request.executed, "Richiesta gia eseguita");
-        require(request.requester != address(0), "Richiesta non esistente");
+        require(!request.executed, "Richiesta gia eseguita");  // evita che la stessa richiesta venga eseguita 2 volte
+        require(request.requester != address(0), "Richiesta non esistente");  // Controllo che la richiesta esista davvero
+        // address(0) è il valore di default di un address non inizializzato
+        // Se quella entry non è mai stata scritta, in Solidity viene assegnato un valore di default --> request.requester = 0x0
 
         // STEP 1: CALCOLO DEL SIGNAL
         // Il signal è l'hash del messaggio, troncato a 254 bit
@@ -495,11 +539,14 @@ contract ZKBoard {
         // sia minore di SNARK_SCALAR_FIELD (~2^254)
         // Questo è necessario per la compatibilità con i circuiti ZK
         uint256 signal = uint256(keccak256(abi.encodePacked(request.message))) >> 8;
+        // In semaphore il signal è "ciò che stai attestando" con la proof. In questo caso è l'hash del messaggio, quindi la proof sarà legata a quel mex
 
         // STEP 2: VERIFICA NULLIFIER NON USATO
         // Double-check anche se già verificato in createRelayRequest
         // Necessario per sicurezza in caso di race conditions
         require(!nullifierHashes[request.nullifierHash], "Nullifier gia usato");
+        // Siccome tra la creazione della request e la sua esecuzione passa del tempo, qualcun altro avrebbe potuto eseguire un'altra request con lo stesso
+        // nullifier. In questo modo evito replay attack.
 
         // STEP 3: VERIFICA PROOF ZK
         // Questa è la parte più importante: verifica che:
@@ -522,6 +569,16 @@ contract ZKBoard {
             request.messageIndex,       // External nullifier (messageIndex per multi-msg)
             request.proof               // La proof Groth16 (8 elementi)
         );
+        /*
+         * Questa chiamata fa si che semaphore verifichi che : 
+         * 1. Esiste una foglia del Merkle tree (un membro del gruppo) coerente con request.merkleTreeRoot
+         * 2. Il prover conosce i segreti dell'identità corrispondente (trapdoor + identity nullifier)
+         * 3. Il signal è quello con cui è stata generata la prova
+         * 4. Il nullifierHash è calcolato correttamente dall'identità e dall'externalNullifier
+         * 5. La proof è matematicamente valida
+         * externalNullifier = request.messageIndex (che in fase di creazione era messageCounter) permette messaggi multipli per identità perchè cambiando
+         * l'externalNullifier cambia anche il nullifierHash
+        */
 
         // STEP 4: AGGIORNA STATE
         // Se arriviamo qui, la proof è valida!
@@ -538,19 +595,153 @@ contract ZKBoard {
 
         // Trasferisci la fee al relayer (chi ha chiamato questa funzione)
         // msg.sender = indirizzo del relayer
-        payable(msg.sender).transfer(request.relayFee);
+        payable(msg.sender).transfer(request.relayFee);  // Sto pagando ETH al chiamante della funzione
+        // msg.sender chi ha chiamato executeRelay
+        // payable(msg.sender) converte quell'indirizzo in un payable address (address a cui può inviare ETH)
+        // . transfer invia esattamente request.relayFee wei a quell'indirizzo
 
         // STEP 6: POST MESSAGGIO
         // Calcola hash del contenuto per il sistema di moderazione
         bytes32 contentHash = keccak256(abi.encodePacked(request.message));
 
         // Emetti evento che il frontend userà per mostrare il messaggio
-        // NOTA: Non c'è collegamento tra il messaggio e l'identità originale
-        // La privacy è preservata!
         emit MessagePosted(contentHash, request.message, block.timestamp, messageCount);
 
         // Emetti evento di relay eseguito
         emit MessageRelayed(requestId, msg.sender, request.relayFee);
+
+        // Incrementa contatore messaggi totali
+        messageCount++;
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    // DIRECT POSTING (NO RELAY)
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Posta un messaggio DIRETTAMENTE senza usare il sistema di relay
+     * @dev Questa funzione permette all'utente di postare il messaggio in una sola
+     *      transazione, pagando direttamente il gas. A differenza del sistema relay:
+     *      - NON richiede due transazioni (createRelayRequest + executeRelay)
+     *      - NON richiede un relayer intermedio
+     *      - NON richiede il pagamento di una relay fee
+     *      - L'utente paga direttamente il gas della transazione
+     *
+     * @param merkleTreeRoot Root del Merkle tree al momento della generazione della proof
+     * @param nullifierHash Hash del nullifier (previene double-posting)
+     * @param proof Array di 8 elementi uint256 che costituiscono la proof Groth16
+     * @param message Testo del messaggio da postare
+     * @param messageIndex Indice usato come externalNullifier (deve essere == messageCounter)
+     *
+     * FLUSSO:
+     * 1. Utente genera la ZK proof nel browser (come per relay)
+     * 2. Utente chiama postMessageDirect() direttamente
+     * 3. Contratto verifica la proof e posta il messaggio
+     * 4. Messaggio pubblicato in UNA sola transazione
+     *
+     * CONFRONTO CON RELAY:
+     * ┌─────────────────────────────────────────────────────────────────┐
+     * │  DIRECT POST              │  RELAY POST                        │
+     * ├─────────────────────────────────────────────────────────────────┤
+     * │  1 transazione            │  2 transazioni                     │
+     * │  Utente paga gas          │  Relayer paga gas (2a tx)          │
+     * │  Nessuna fee extra        │  Relay fee richiesta               │
+     * │  Più veloce               │  Dipende dal relayer               │
+     * │  msg.sender visibile      │  msg.sender visibile in createReq  │
+     * └─────────────────────────────────────────────────────────────────┘
+     *
+     * NOTA SULLA PRIVACY:
+     * In entrambi i casi (direct e relay), l'indirizzo Ethereum che effettua
+     * la transazione è visibile on-chain. La privacy garantita da Semaphore
+     * riguarda l'IDENTITÀ SEMAPHORE (chi sei nel gruppo), non l'indirizzo
+     * Ethereum usato per la transazione.
+     *
+     * SICUREZZA:
+     * - La proof garantisce che solo un membro del gruppo possa postare
+     * - Il nullifier previene che la stessa identità posti lo stesso messaggio due volte
+     * - Il messageIndex garantisce che la proof sia stata generata per il contesto corrente
+     */
+    function postMessageDirect(
+        uint256 merkleTreeRoot,
+        uint256 nullifierHash,
+        uint256[8] calldata proof,
+        string calldata message,
+        uint256 messageIndex
+    ) external {
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 1: VERIFICA CREDITI
+        // ─────────────────────────────────────────────────────────────────
+        // L'utente deve avere almeno 1 credito per postare
+        // I crediti vengono ottenuti con joinGroupWithDeposit() o topUpDeposit()
+        require(credits[msg.sender] > 0, "Crediti insufficienti");
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 2: VERIFICA MESSAGE INDEX
+        // ─────────────────────────────────────────────────────────────────
+        // Il messageIndex deve corrispondere al messageCounter corrente
+        // Questo garantisce che la proof sia stata generata con l'externalNullifier
+        // corretto e previene race conditions
+        require(messageIndex == messageCounter, "Message index non valido");
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 3: CALCOLO SIGNAL
+        // ─────────────────────────────────────────────────────────────────
+        // Il signal è l'hash del messaggio, troncato a 254 bit
+        // >> 8 rimuove gli ultimi 8 bit per garantire compatibilità con SNARK field
+        // Questo è lo stesso calcolo fatto in executeRelay()
+        uint256 signal = uint256(keccak256(abi.encodePacked(message))) >> 8;
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 4: VERIFICA NULLIFIER NON USATO
+        // ─────────────────────────────────────────────────────────────────
+        // Controlla che questo nullifier non sia già stato usato
+        // Previene replay attack e double-posting
+        require(!nullifierHashes[nullifierHash], "Nullifier gia usato");
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 5: VERIFICA PROOF ZK
+        // ─────────────────────────────────────────────────────────────────
+        // Chiama Semaphore per verificare che:
+        // 1. L'identità che ha generato la proof è nel gruppo (merkleTreeRoot)
+        // 2. Il signal (messaggio) è quello per cui la proof è stata generata
+        // 3. Il nullifier è derivato correttamente dall'identità
+        // 4. La proof è matematicamente valida
+        //
+        // SE LA PROOF NON È VALIDA: la funzione fa revert
+        // SE LA PROOF È VALIDA: l'esecuzione continua
+        semaphore.verifyProof(
+            groupId,            // Gruppo Semaphore di questa board
+            merkleTreeRoot,     // Root del Merkle tree usato per la proof
+            signal,             // Hash del messaggio (>> 8)
+            nullifierHash,      // Hash univoco per questa identità + externalNullifier
+            messageIndex,       // externalNullifier (== messageCounter)
+            proof               // La proof Groth16 (8 elementi uint256)
+        );
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 6: AGGIORNA STATE
+        // ─────────────────────────────────────────────────────────────────
+        // Se arriviamo qui, la proof è valida!
+
+        // Marca il nullifier come usato per prevenire riutilizzo
+        nullifierHashes[nullifierHash] = true;
+
+        // Scala 1 credito all'utente
+        credits[msg.sender]--;
+
+        // Incrementa il messageCounter per il prossimo messaggio
+        // Questo cambia l'externalNullifier per le prossime proof
+        messageCounter++;
+
+        // ─────────────────────────────────────────────────────────────────
+        // STEP 7: PUBBLICA MESSAGGIO
+        // ─────────────────────────────────────────────────────────────────
+        // Calcola hash del contenuto per il sistema di moderazione
+        bytes32 contentHash = keccak256(abi.encodePacked(message));
+
+        // Emetti evento MessagePosted - lo stesso evento usato da executeRelay
+        // Il frontend ascolta questo evento per mostrare i messaggi
+        emit MessagePosted(contentHash, message, block.timestamp, messageCount);
 
         // Incrementa contatore messaggi totali
         messageCount++;
