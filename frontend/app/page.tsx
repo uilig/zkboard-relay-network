@@ -9,7 +9,7 @@
  * 1. Connettono il wallet (MetaMask, Coinbase, etc.)
  * 2. Generano un'identità Semaphore (nullifier + trapdoor)
  * 3. Depositano 0.05 ETH per unirsi al gruppo on-chain
- * 4. Ricevono crediti per postare messaggi (~50 messaggi)
+ * 4. Possono postare messaggi (deposits / COST_PER_MESSAGE = ~50 messaggi)
  *
  * TECNOLOGIE:
  * - Next.js 14: Framework React per applicazioni web moderne
@@ -781,7 +781,7 @@ export default function Home() {
               <span className="text-white">Message Board</span>
             </h1>
             <p className="text-xl text-slate-400 max-w-2xl mx-auto">
-              Post messages anonymously using zero-knowledge proofs. Your identity stays private, guaranteed by cryptography.
+              Post messages using zero-knowledge proofs. Your Semaphore identity is hidden, but your Ethereum address is visible on-chain.
             </p>
           </div>
 
@@ -799,15 +799,15 @@ export default function Home() {
             {/* Feature 2: Anonymous */}
             <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
               <div className="text-3xl mb-2">👤</div>
-              <div className="text-sm font-bold text-white">Anonymous</div>
-              <div className="text-xs text-slate-400 mt-1">Fully Private</div>
+              <div className="text-sm font-bold text-white">ZK Identity</div>
+              <div className="text-xs text-slate-400 mt-1">Hidden Commitment</div>
             </div>
 
-            {/* Feature 3: Relay */}
+            {/* Feature 3: Dual Mode */}
             <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl p-4 hover:scale-105 transition-transform duration-200">
               <div className="text-3xl mb-2">⚡</div>
-              <div className="text-sm font-bold text-white">Relay System</div>
-              <div className="text-xs text-slate-400 mt-1">Enhanced Privacy</div>
+              <div className="text-sm font-bold text-white">Dual Mode</div>
+              <div className="text-xs text-slate-400 mt-1">Direct or Relay</div>
             </div>
           </div>
         </div>

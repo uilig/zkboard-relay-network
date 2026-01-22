@@ -997,10 +997,11 @@ A2: SÌ! Non c'è restrizione. Puoi:
 
 Q3: Il relayer può vedere chi ha postato?
 
-A3: NO! Il sistema è anonimo:
-    - requester = indirizzo che ha chiamato createRelayRequest
-    - Ma la proof ZK NON rivela QUALE identità Semaphore ha postato
-    - Il requester potrebbe essere un proxy/burner wallet
+A3: PARZIALMENTE. È importante capire cosa è visibile e cosa no:
+    - requester = indirizzo Ethereum VISIBILE on-chain
+    - La proof ZK NON rivela QUALE identity commitment ha generato il messaggio
+    - Per vera privacy dell'indirizzo: usa un burner wallet dedicato
+    - L'identity commitment Semaphore resta nascosta, l'indirizzo Ethereum NO
 
 Q4: Perché non usare direttamente postMessage()?
 
@@ -1013,10 +1014,11 @@ A4: postMessage() richiede che msg.sender abbia ETH per il gas (~0.0015 ETH).
 Q5: Come viene garantita la fee al relayer?
 
 A5: Nel contratto ZKBoard:
-    - L'utente deposita ETH con topUpDeposit()
-    - Quando chiama createRelayRequest(), la fee viene "riservata"
-    - Quando il relayer esegue, il contratto trasferisce la fee
-    - Se il deposito è insufficiente, createRelayRequest() reverte
+    - L'utente deposita ETH con joinGroupWithDeposit() o topUpDeposit()
+    - createRelayRequest() verifica che deposits >= relayFee
+    - Quando il relayer esegue, il contratto scala la fee dal deposito
+    - La fee viene trasferita al relayer
+    - Se il deposito è insufficiente, executeRelay() reverte
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 10. ESEMPIO COMPLETO END-TO-END
@@ -1028,7 +1030,7 @@ PASSO 1: SETUP INIZIALE
   Alice:
     - Ha identità Semaphore (commitment = 123...456)
     - Ha depositato 0.01 ETH con joinGroupWithDeposit()
-    - Ora ha credits = 10 (0.01 ETH / 0.001 = 10 messaggi)
+    - Ora ha 10 messaggi disponibili (0.01 ETH / 0.001 = 10)
     - Ma non ha ETH nel wallet per gas!
 
   Bob:

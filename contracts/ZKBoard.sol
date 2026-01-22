@@ -12,20 +12,27 @@ pragma solidity ^0.8.20;
  *
  * CARATTERISTICHE PRINCIPALI:
  * 1. Identità anonime: Gli utenti si registrano con un "identity commitment"
- *    che non rivela la loro vera identità
- * 2. Sistema di depositi: Gli utenti depositano ETH e ricevono crediti
- * 3. Relay Network: I messaggi vengono postati tramite relayers terzi che
- *    ricevono una fee, separando completamente l'identità dal messaggio
- * 4. Proof ZK: Ogni messaggio richiede una proof che dimostra membership
- *    nel gruppo senza rivelare chi è l'autore
- * 5. Nullifier: Previene il double-posting usando hash univoci
+ *    che non rivela la loro vera identità Semaphore
+ * 2. Sistema di depositi: Gli utenti depositano ETH per poter postare messaggi
+ *    (messaggi disponibili = deposits / COST_PER_MESSAGE)
+ * 3. Relay Network: I messaggi possono essere postati tramite relayers terzi
+ *    che ricevono una fee per eseguire le transazioni
+ * 4. Direct Posting: Gli utenti possono anche postare direttamente
+ * 5. Proof ZK: Ogni messaggio richiede una proof che dimostra membership
+ *    nel gruppo senza rivelare quale identity commitment l'ha generata
+ * 6. Nullifier: Previene il double-posting usando hash univoci
+ *
+ * NOTA IMPORTANTE SULLA PRIVACY:
+ * L'indirizzo Ethereum usato per le transazioni è SEMPRE visibile on-chain.
+ * La privacy garantita da Semaphore riguarda solo l'identity commitment,
+ * NON l'indirizzo Ethereum del wallet.
  *
  * FLUSSO OPERATIVO:
- * 1. Utente deposita ETH → Riceve crediti
+ * 1. Utente deposita ETH → Può postare (deposits / COST_PER_MESSAGE) messaggi
  * 2. Utente genera ZK proof offline (nel browser)
- * 3. Utente crea relay request on-chain (basso gas cost)
- * 4. Relayer esegue la request → Verifica proof → Posta messaggio
- * 5. Relayer riceve fee dal deposito dell'utente
+ * 3a. DIRECT: Utente posta direttamente (1 transazione)
+ * 3b. RELAY: Utente crea relay request, relayer la esegue (2 transazioni)
+ * 4. Il deposito viene scalato ad ogni messaggio
  *
  * ═══════════════════════════════════════════════════════════════════════
  */
@@ -98,21 +105,16 @@ contract ZKBoard {
     // ═════════════════════════════════════════════════════════════════
 
     // Questa parte di codice definisce tutto lo stato (le variabili presenti on-chain) che
-    // serve per far funzionare il sistema depositi -> crediti -> richieste -> relayer
+    // serve per far funzionare il sistema depositi -> richieste -> relayer
     
     // In Solidity il mapping è una struttura dati di tipo dizionario : si associa una chiave a un valore
 
     /// @notice Depositi degli utenti (in wei)
     /// @dev address => amount in ETH depositato
     ///      Questo mapping traccia quanto ETH ha depositato ogni utente
-    ///      Il deposito serve a pagare le fee ai relayers
+    ///      Il deposito serve a pagare i messaggi e le fee ai relayers
+    ///      Messaggi disponibili = deposits / COST_PER_MESSAGE
     mapping(address => uint256) public deposits;  // Per ogni address (chiave) salvo un uint256 (valore) che rappresenta il deposito
-
-    /// @notice Crediti messaggi disponibili per ogni utente
-    /// @dev address => numero di messaggi che può postare
-    ///      1 credito = 1 messaggio
-    ///      Crediti = deposito / COST_PER_MESSAGE
-    mapping(address => uint256) public credits;
 
     /**
      * @notice Struttura dati per una richiesta di relay
@@ -171,12 +173,13 @@ contract ZKBoard {
     /// @dev Equivale a circa 50 messaggi con il costo attuale
     uint256 public constant MIN_DEPOSIT = 0.05 ether;
 
-    /// @notice Costo di un singolo messaggio (0.001 ETH = 1 credito)
-    /// @dev Usato per calcolare i crediti: credits = deposit / COST_PER_MESSAGE
+    /// @notice Costo di un singolo messaggio (0.001 ETH)
+    /// @dev Usato per calcolare messaggi disponibili: deposits / COST_PER_MESSAGE
+    ///      Scalato dal deposito ad ogni messaggio inviato
     uint256 public constant COST_PER_MESSAGE = 0.001 ether;
 
     // ═════════════════════════════════════════════════════════════════
-    // STATE VARIABLES - NULLIFIER & MODERATION
+    // STATE VARIABLES - NULLIFIER TRACKING
     // ═════════════════════════════════════════════════════════════════
 
     /// @notice Traccia quali nullifier sono già stati usati
@@ -185,22 +188,8 @@ contract ZKBoard {
     mapping(uint256 => bool) public nullifierHashes;
 
     /// @notice Numero totale di messaggi postati con successo
-    /// @dev Incrementato ogni volta che executeRelay() ha successo
+    /// @dev Incrementato ogni volta che executeRelay() o postMessageDirect() ha successo
     uint256 public messageCount;
-
-    /// @notice Conta quante volte un messaggio è stato flaggato
-    /// @dev keccak256(message) => numero di flags
-    ///      Usato per il sistema di moderazione comunitaria
-    mapping(bytes32 => uint256) public flagCount;
-
-    /// @notice Traccia se un utente ha già flaggato un messaggio specifico
-    /// @dev user address => contentHash => bool
-    ///      Previene che lo stesso utente flaggi più volte lo stesso messaggio
-    mapping(address => mapping(bytes32 => bool)) public hasUserFlagged;
-
-    /// @notice Soglia minima di flags necessari per nascondere un messaggio
-    /// @dev Se flagCount >= MIN_FLAGS_TO_HIDE, il messaggio viene considerato "hidden"
-    uint256 public constant MIN_FLAGS_TO_HIDE = 3;
 
     /// @notice Flag che indica se il contratto è stato inizializzato
     /// @dev Previene chiamate multiple a initializeBoard()
@@ -254,14 +243,6 @@ contract ZKBoard {
         string message,                // Testo del messaggio
         uint256 timestamp,             // Quando è stato postato
         uint256 messageId              // ID incrementale del messaggio
-    );
-
-    /// @notice Emesso quando un messaggio viene flaggato
-    event MessageFlagged(
-        bytes32 indexed contentHash,
-        address indexed flagger,
-        uint256 newFlagCount,
-        uint256 timestamp
     );
 
     // ═════════════════════════════════════════════════════════════════
@@ -363,10 +344,10 @@ contract ZKBoard {
      * 2. Deriva il commitment: poseidon([nullifier, trapdoor])
      * 3. Chiama questa funzione con il commitment + deposito ETH
      * 4. Viene aggiunto al gruppo Semaphore
-     * 5. Riceve crediti proporzionali al deposito
+     * 5. Può postare messaggi (deposits / COST_PER_MESSAGE)
      *
      * ESEMPIO:
-     * Deposito 0.05 ETH → 0.05 / 0.001 = 50 crediti = 50 messaggi
+     * Deposito 0.05 ETH → 0.05 / 0.001 = 50 messaggi disponibili
      *
      * @dev Il commitment NON rivela l'identità reale, è un hash crittografico
      *      L'identità completa rimane nel browser dell'utente
@@ -383,11 +364,7 @@ contract ZKBoard {
         // Aggiorna il deposito dell'utente
         // Usiamo += perché l'utente potrebbe depositare più volte
         deposits[msg.sender] += msg.value;  // Tiene traccia dei depositi dell'utente utilizzando l'indirizzo dell'account con cui l'utente ha depositato
-
-        // Calcola e assegna crediti
-        // Ogni 0.001 ETH = 1 credito
-        // Esempio: 0.05 ETH / 0.001 = 50 crediti
-        credits[msg.sender] += msg.value / COST_PER_MESSAGE;  // Assengno a quell'utente crediti proporzionali al deposito effettuato
+        // Messaggi disponibili = deposits / COST_PER_MESSAGE (es. 0.05 ETH / 0.001 = 50 messaggi)
 
         // Emetti eventi per tracking
         emit MemberJoined(identityCommitment);
@@ -423,8 +400,8 @@ contract ZKBoard {
      /**
      * Questa funzione non posta il messaggio e non verifica la proof
      * Per prima cosa controlla che l'utente abbia i diritti economici per eseguirla
-     * "Prenota" un contesto consumando un credito e avanzando messageCounter
-     * Salva in storage una RelayRequest che un relayer potrà eseguire dopo con executeRelay
+     * Avanza messageCounter e salva in storage una RelayRequest
+     * Un relayer potrà eseguire la request dopo con executeRelay
      * é la fase di commit della richiesta
      */
      
@@ -436,12 +413,11 @@ contract ZKBoard {
         uint256 relayFee,  // fee da pagare al relayer
         uint256 messageIndex  // externalNullifier che deve essere uguale al contatore globale
     ) external {
-        // Verifica che l'utente abbia crediti
-        // 1 credito = diritto di postare 1 messaggio
-        require(credits[msg.sender] > 0, "Crediti insufficienti");  // Requisito 1 --> i crediti per creare la request devono essere sufficienti
+        // Verifica che la relay fee sia almeno il costo minimo per messaggio (anti-spam)
+        require(relayFee >= COST_PER_MESSAGE, "Relay fee deve essere >= COST_PER_MESSAGE");
 
         // Verifica che l'utente abbia abbastanza deposito per pagare la fee
-        require(deposits[msg.sender] >= relayFee, "Deposito insufficiente per relay fee");  // Requisito 2 --> controllo che l'utente abbia abbastanza ETH
+        require(deposits[msg.sender] >= relayFee, "Deposito insufficiente per relay fee");
 
         // Verifica che messageIndex corrisponda al messageCounter corrente
         // Questo garantisce che la proof sia stata generata con l'externalNullifier corretto
@@ -454,9 +430,9 @@ contract ZKBoard {
         // Previene il riuso della stessa proof (double-posting)
         require(!nullifierHashes[nullifierHash], "Nullifier gia usato");  // Evita il riuso di uno stesso nullifierHash
 
-	// Qui passo alle modifiche allo stato del contratto 
-        // Decrementa i crediti (consuma 1 credito per questa request)
-        credits[msg.sender]--;
+	// Qui passo alle modifiche allo stato del contratto
+        // Nota: il deposito viene scalato in executeRelay() quando il relayer esegue la request
+        // Questo evita di perdere ETH se la request non viene mai eseguita
 
         // Incrementa messageCounter per il prossimo messaggio
         messageCounter++;
@@ -494,9 +470,12 @@ contract ZKBoard {
      * 6. Se invalida: transaction reverted (nessun costo per chi chiama)
      *
      * INCENTIVI ECONOMICI:
-     * - Relayer paga gas (~400k gas = ~$8-15 su mainnet)
-     * - Relayer riceve relayFee (~0.001 ETH = ~$2-3)
-     * - Su L2 (Arbitrum/Optimism) il gas sarebbe ~$0.10, profitto ~$2-3
+     * - Relayer paga gas (~400k gas)
+     * - Su Sepolia: gas praticamente gratis (testnet)
+     * - Su Mainnet (30 gwei): ~0.012 ETH = ~$36 (ETH=$3000)
+     * - Su L2 (Arbitrum/Optimism): ~$0.10-0.50
+     * - Relayer riceve relayFee (minimo COST_PER_MESSAGE = 0.001 ETH)
+     * - NOTA: Su Sepolia il sistema funziona perché ETH è gratis
      *
      * SICUREZZA:
      * - La proof garantisce che solo un membro del gruppo possa creare request valide
@@ -669,11 +648,11 @@ contract ZKBoard {
         uint256 messageIndex
     ) external {
         // ─────────────────────────────────────────────────────────────────
-        // STEP 1: VERIFICA CREDITI
+        // STEP 1: VERIFICA DEPOSITO
         // ─────────────────────────────────────────────────────────────────
-        // L'utente deve avere almeno 1 credito per postare
-        // I crediti vengono ottenuti con joinGroupWithDeposit() o topUpDeposit()
-        require(credits[msg.sender] > 0, "Crediti insufficienti");
+        // L'utente deve avere abbastanza deposito per pagare il costo del messaggio
+        // Deposito ottenuto con joinGroupWithDeposit() o topUpDeposit()
+        require(deposits[msg.sender] >= COST_PER_MESSAGE, "Deposito insufficiente");
 
         // ─────────────────────────────────────────────────────────────────
         // STEP 2: VERIFICA MESSAGE INDEX
@@ -726,9 +705,6 @@ contract ZKBoard {
         // Marca il nullifier come usato per prevenire riutilizzo
         nullifierHashes[nullifierHash] = true;
 
-        // Scala 1 credito all'utente
-        credits[msg.sender]--;
-
         // Scala il costo del messaggio dal deposito ETH
         deposits[msg.sender] -= COST_PER_MESSAGE;
 
@@ -757,21 +733,19 @@ contract ZKBoard {
     /**
      * @notice Ricarica il deposito (top-up)
      * @dev Permette di aggiungere ETH al deposito esistente
-     *      Calcola e assegna crediti aggiuntivi
+     *      I messaggi disponibili aumentano automaticamente (deposits / COST_PER_MESSAGE)
      *
      * CASO D'USO:
-     * Utente ha finito i crediti ma vuole continuare a postare
-     * Deposita altro ETH per ricevere più crediti
+     * Utente ha finito il deposito ma vuole continuare a postare
+     * Deposita altro ETH per avere più messaggi disponibili
      */
     function topUpDeposit() external payable {
         // Verifica che sia stato inviato ETH
         require(msg.value > 0, "Deposito deve essere > 0");
 
         // Aggiungi al deposito esistente
+        // Messaggi disponibili = deposits / COST_PER_MESSAGE (calcolato automaticamente)
         deposits[msg.sender] += msg.value;
-
-        // Calcola e aggiungi crediti proporzionali
-        credits[msg.sender] += msg.value / COST_PER_MESSAGE;
 
         // Emetti evento per tracking
         emit DepositMade(msg.sender, msg.value, deposits[msg.sender]);
@@ -779,11 +753,11 @@ contract ZKBoard {
 
     /**
      * @notice Ritira tutto il deposito rimanente
-     * @dev Resetta deposito e crediti a zero, trasferisce ETH all'utente
+     * @dev Resetta deposito a zero e trasferisce ETH all'utente
      *
      * QUANDO USARE:
      * - Utente vuole uscire dalla piattaforma e recuperare i fondi
-     * - Utente ha crediti inutilizzati e vuole il rimborso
+     * - Utente ha deposito inutilizzato e vuole il rimborso
      *
      * SICUREZZA:
      * - Solo l'owner del deposito può ritirarlo (msg.sender check implicito)
@@ -804,9 +778,6 @@ contract ZKBoard {
         // Resetta deposito a zero
         deposits[msg.sender] = 0;
 
-        // Resetta crediti a zero
-        credits[msg.sender] = 0;
-
         // Trasferisci ETH all'utente
         payable(msg.sender).transfer(amount);
 
@@ -814,98 +785,6 @@ contract ZKBoard {
         emit DepositWithdrawn(msg.sender, amount);
     }
 
-    // ═════════════════════════════════════════════════════════════════
-    // MODERATION FUNCTIONS
-    // ═════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Segnala un messaggio come inappropriato
-     * @param contentHash Hash del messaggio da segnalare
-     *
-     * SISTEMA DI MODERAZIONE COMUNITARIA:
-     * - Gli utenti possono flaggare messaggi inappropriati
-     * - Ogni utente può flaggare ogni messaggio UNA SOLA VOLTA
-     * - Se un messaggio raggiunge MIN_FLAGS_TO_HIDE (3), viene nascosto dal frontend
-     * - I dati on-chain rimangono immutabili (trasparenza)
-     *
-     * LIMITI:
-     * - Sistema base, può essere migliorato con reputation/stake
-     * - Per ora chiunque con wallet può flaggare (potenziale abuso)
-     * - In futuro: solo membri verificati o con stake
-     *
-     * @dev contentHash = keccak256(messaggio)
-     */
-    function flagMessage(bytes32 contentHash) external {
-        // Previeni flag multipli dallo stesso utente
-        // Ogni utente può flaggare ogni messaggio max 1 volta
-        require(!hasUserFlagged[msg.sender][contentHash], "Messaggio gia flaggato da te");
-
-        // Incrementa il contatore di flags per questo messaggio
-        flagCount[contentHash]++;
-
-        // Marca che questo utente ha flaggato questo messaggio
-        hasUserFlagged[msg.sender][contentHash] = true;
-
-        // Emetti evento per tracking
-        emit MessageFlagged(
-            contentHash,
-            msg.sender,
-            flagCount[contentHash],
-            block.timestamp
-        );
-    }
-
-    // ═════════════════════════════════════════════════════════════════
-    // VIEW FUNCTIONS (non modificano state, solo lettura)
-    // ═════════════════════════════════════════════════════════════════
-
-    /**
-     * @notice Restituisce la soglia di flags per nascondere un messaggio
-     * @return threshold Numero minimo di flags (attualmente fisso a 3)
-     *
-     * @dev Per ora è una costante, ma la funzione permette di renderla
-     *      dinamica in futuro (es. basata sulla dimensione del gruppo)
-     */
-    function getThreshold() public pure returns (uint256) {
-        return MIN_FLAGS_TO_HIDE;
-    }
-
-    /**
-     * @notice Verifica se un messaggio è nascosto (troppi flags)
-     * @param contentHash Hash del messaggio da verificare
-     * @return bool True se il messaggio ha >= MIN_FLAGS_TO_HIDE flags
-     *
-     * UTILIZZO NEL FRONTEND:
-     * Il frontend chiama questa funzione per ogni messaggio
-     * Se ritorna true, il messaggio viene nascosto dalla UI
-     * (ma i dati rimangono on-chain per trasparenza)
-     */
-    function isMessageHidden(bytes32 contentHash) public view returns (bool) {
-        return flagCount[contentHash] >= getThreshold();
-    }
-
-    /**
-     * @notice Ottiene il numero di flags di un messaggio
-     * @param contentHash Hash del messaggio
-     * @return uint256 Numero totale di flags ricevuti
-     */
-    function getFlagCount(bytes32 contentHash) external view returns (uint256) {
-        return flagCount[contentHash];
-    }
-
-    /**
-     * @notice Verifica se un utente ha già flaggato un messaggio
-     * @param user Indirizzo dell'utente da verificare
-     * @param contentHash Hash del messaggio
-     * @return bool True se l'utente ha già flaggato questo messaggio
-     *
-     * UTILIZZO:
-     * Il frontend usa questa funzione per disabilitare il pulsante "Flag"
-     * se l'utente ha già flaggato quel messaggio
-     */
-    function hasAlreadyFlagged(address user, bytes32 contentHash) external view returns (bool) {
-        return hasUserFlagged[user][contentHash];
-    }
 }
 
 /*
@@ -914,30 +793,33 @@ contract ZKBoard {
  * ═══════════════════════════════════════════════════════════════════════
  *
  * COSA FA QUESTO CONTRATTO:
- * Implementa una bacheca messaggi completamente anonima dove gli utenti possono
- * postare messaggi senza rivelare la loro identità, utilizzando un sistema di
- * relay decentralizzato per massimizzare la privacy.
+ * Implementa una bacheca messaggi dove gli utenti possono postare messaggi
+ * senza rivelare la loro identity commitment Semaphore, utilizzando un sistema
+ * di relay opzionale o posting diretto.
  *
  * COMPONENTI PRINCIPALI:
- * 1. Sistema di Identità (Semaphore): Gestisce identità anonime e proofs
- * 2. Sistema di Depositi: Gli utenti depositano ETH e ricevono crediti
- * 3. Relay Network: Separazione tra creazione e esecuzione messaggi
- * 4. Moderazione: Sistema comunitario per flaggare contenuti inappropriati
+ * 1. Sistema di Identità (Semaphore): Gestisce identity commitments e proofs
+ * 2. Sistema di Depositi: Gli utenti depositano ETH per poter postare
+ * 3. Dual Mode: Posting diretto o tramite relay network
  *
  * FLUSSO TIPICO:
- * 1. User deposita 0.05 ETH → Riceve 50 crediti
+ * 1. User deposita 0.05 ETH → Può postare ~50 messaggi
  * 2. User genera proof ZK nel browser (offline, privato)
- * 3. User crea relay request on-chain (basso gas)
- * 4. Relayer esegue request → Verifica proof → Posta messaggio
- * 5. Relayer riceve fee dal deposito dell'user
- * 6. Messaggio appare sulla board, completamente anonimo
+ * 3a. DIRECT: User posta direttamente (1 transazione)
+ * 3b. RELAY: User crea request, relayer la esegue (2 transazioni)
+ * 4. Il deposito viene scalato ad ogni messaggio
+ * 5. Messaggio appare sulla board
  *
- * GARANZIE DI PRIVACY:
- * - L'identità reale non è mai rivelata on-chain
- * - Il commitment non è reversibile
+ * COSA È PROTETTO:
+ * - L'identity commitment non è rivelata dalla proof
+ * - Il commitment non è reversibile (hash crittografico)
  * - Il relayer non può modificare il messaggio
- * - La proof garantisce autenticità senza rivelare autore
- * - Il nullifier previene double-posting mantenendo anonimato
+ * - La proof garantisce autenticità senza rivelare quale commitment
+ * - Il nullifier previene double-posting
+ *
+ * COSA NON È PROTETTO:
+ * - L'indirizzo Ethereum usato per le transazioni è VISIBILE on-chain
+ * - Correlazione address → transazione → messaggio è possibile
  *
  * SICUREZZA:
  * - Proofs verificate crittograficamente (Groth16)
@@ -949,7 +831,7 @@ contract ZKBoard {
  * - joinGroupWithDeposit: ~150k gas
  * - createRelayRequest: ~50k gas (basso!)
  * - executeRelay: ~400k gas (pagato dal relayer)
- * - flagMessage: ~50k gas
+ * - postMessageDirect: ~400k gas
  *
  * ═══════════════════════════════════════════════════════════════════════
  */

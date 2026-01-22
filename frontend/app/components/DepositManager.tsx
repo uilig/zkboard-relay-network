@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { ZKBOARD_ABI, ZKBOARD_ADDRESS } from '../utils/constants';
+import { ZKBOARD_ABI, ZKBOARD_ADDRESS, COST_PER_MESSAGE } from '../utils/constants';
 
 export default function DepositManager() {
   const { address } = useAccount();
@@ -21,17 +21,6 @@ export default function DepositManager() {
     },
   });
 
-  const { data: creditsData, refetch: refetchCredits } = useReadContract({
-    address: ZKBOARD_ADDRESS,
-    abi: ZKBOARD_ABI,
-    functionName: 'credits',
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!address,
-      refetchInterval: 10000,
-    },
-  });
-
   const { data: topUpHash, writeContract: topUp, isPending: isTopUpPending } = useWriteContract();
   const { data: withdrawHash, writeContract: withdraw, isPending: isWithdrawPending } = useWriteContract();
 
@@ -39,7 +28,6 @@ export default function DepositManager() {
     hash: topUpHash,
     onSuccess() {
       refetchDeposit();
-      refetchCredits();
       setShowRecharge(false);
     },
   });
@@ -48,12 +36,14 @@ export default function DepositManager() {
     hash: withdrawHash,
     onSuccess() {
       refetchDeposit();
-      refetchCredits();
     },
   });
 
   const deposit = depositData ? formatEther(depositData as bigint) : '0';
-  const credits = creditsData ? (creditsData as bigint).toString() : '0';
+  // Calcola messaggi disponibili: deposits / COST_PER_MESSAGE
+  const availableMessages = depositData
+    ? Math.floor(Number(formatEther(depositData as bigint)) / Number(COST_PER_MESSAGE))
+    : 0;
   const depositNum = parseFloat(deposit);
   const isLowBalance = depositNum < 0.01;
 
@@ -67,7 +57,7 @@ export default function DepositManager() {
   };
 
   const handleWithdraw = () => {
-    if (confirm(`Withdraw ${deposit} ETH? This will remove all remaining credits.`)) {
+    if (confirm(`Withdraw ${deposit} ETH? This will reset your balance.`)) {
       withdraw({
         address: ZKBOARD_ADDRESS,
         abi: ZKBOARD_ABI,
@@ -97,8 +87,8 @@ export default function DepositManager() {
         </div>
 
         <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/30">
-          <div className="text-xs text-slate-400 mb-2">Credits</div>
-          <div className="text-2xl font-black text-indigo-400">{credits}</div>
+          <div className="text-xs text-slate-400 mb-2">Available</div>
+          <div className="text-2xl font-black text-indigo-400">{availableMessages}</div>
           <div className="text-xs text-slate-500 mt-1">messages</div>
         </div>
       </div>
@@ -135,7 +125,7 @@ export default function DepositManager() {
               placeholder="0.05"
             />
             <div className="text-xs text-slate-500 mt-2">
-              ≈ {Math.floor(parseFloat(rechargeAmount || '0') / 0.001)} messages
+              ≈ {Math.floor(parseFloat(rechargeAmount || '0') / Number(COST_PER_MESSAGE))} messages
             </div>
           </div>
 

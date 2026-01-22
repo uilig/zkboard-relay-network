@@ -31,7 +31,7 @@
 // ============================================================================
 
 // Indirizzo del contratto ZKBoard deployato su Sepolia testnet
-export const ZKBOARD_ADDRESS = "0x02455Eb22168E81851819e61774f301eB9Dd4274";
+export const ZKBOARD_ADDRESS = "0xE65Bb56BF371D8a6FA0aC7b07947f6dDaba1EABE";
 // IMPORTANTE: Questo indirizzo è specifico per il deployment su Sepolia
 // Se rideploy il contratto, devi aggiornare questo valore!
 // Per ottenere l'indirizzo dopo il deploy: npx hardhat run scripts/deploy.ts --network sepolia
@@ -41,7 +41,7 @@ export const ZKBOARD_ADDRESS = "0x02455Eb22168E81851819e61774f301eB9Dd4274";
 // ============================================================================
 
 // ID del gruppo Semaphore usato dall'applicazione
-export const FALLBACK_GROUP_ID = 1769107490;
+export const FALLBACK_GROUP_ID = 1769115421;
 // COSA È: Ogni applicazione Semaphore crea un gruppo con un ID univoco
 // COME È GENERATO: Il contratto ZKBoard crea automaticamente un gruppo durante il deploy
 // PERCHÉ SI CHIAMA FALLBACK: In alcune versioni precedenti c'era la possibilità di
@@ -110,17 +110,6 @@ export const ZKBOARD_ABI = [
     // ESEMPIO: deposits(0x1234...) → 10000000000000000 (0.01 ETH)
   },
 
-  {
-    // Funzione credits(address user) → uint256
-    // Restituisce i crediti di un utente (quanti messaggi può postare via relay)
-    "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
-    "name": "credits",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-    // CALCOLO: credits = deposits / COST_PER_MESSAGE
-    // ESEMPIO: deposito 0.01 ETH → credits = 10 (0.01 / 0.001)
-  },
 
   {
     // Funzione nextRequestId() → uint256
@@ -228,7 +217,7 @@ export const ZKBOARD_ABI = [
     // 3. Chiama postMessageDirect con proof + messaggio + messageIndex
     // 4. Contratto verifica la proof e pubblica il messaggio
     // GAS: ~400k gas (verifica proof inclusa)
-    // RICHIEDE: credits >= 1
+    // RICHIEDE: deposits >= COST_PER_MESSAGE
   },
 
   {
@@ -254,7 +243,7 @@ export const ZKBOARD_ABI = [
     // 4. Contratto salva la richiesta (NON verifica ancora la proof!)
     // 5. Un relayer chiamerà executeRelay(requestId) più tardi
     // GAS: ~50k gas (molto meno di postMessage!)
-    // RICHIEDE: credits >= 1 (l'utente deve avere depositato ETH)
+    // RICHIEDE: deposits >= relayFee (l'utente deve avere depositato ETH)
   },
 
   {
@@ -278,27 +267,27 @@ export const ZKBOARD_ABI = [
 
   {
     // Funzione topUpDeposit()
-    // Aggiunge ETH al deposito dell'utente (aumenta i crediti)
+    // Aggiunge ETH al deposito dell'utente
     "inputs": [],
     "name": "topUpDeposit",
     "outputs": [],
     "stateMutability": "payable",
     "type": "function"
-    // USO: Per aggiungere crediti dopo la registrazione iniziale
-    // CALCOLO: credits += msg.value / COST_PER_MESSAGE
-    // ESEMPIO: topUpDeposit({ value: parseEther("0.01") }) → +10 credits
+    // USO: Per aggiungere ETH dopo la registrazione iniziale
+    // Messaggi disponibili = deposits / COST_PER_MESSAGE
+    // ESEMPIO: topUpDeposit({ value: parseEther("0.01") }) → +10 messaggi disponibili
   },
 
   {
     // Funzione withdrawDeposit()
-    // Preleva tutto il deposito dell'utente (azzera i crediti)
+    // Preleva tutto il deposito dell'utente
     "inputs": [],
     "name": "withdrawDeposit",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
     // USO: Per recuperare i fondi non utilizzati
-    // EFFETTO: deposits[msg.sender] = 0, credits[msg.sender] = 0
+    // EFFETTO: deposits[msg.sender] = 0
     // TRASFERISCE: tutto il deposito a msg.sender
     // NOTA: Non si può prelevare parzialmente, solo tutto o niente
   },
@@ -372,13 +361,13 @@ export const ZKBOARD_ABI = [
   },
 
   {
-    // Evento DepositToppedUp(address indexed user, uint256 amount, uint256 credits)
+    // Evento DepositToppedUp(address indexed user, uint256 amount, uint256 newBalance)
     // Emesso quando un utente aggiunge ETH al suo deposito
     "anonymous": false,
     "inputs": [
       { "indexed": true, "internalType": "address", "name": "user", "type": "address" },
       { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "credits", "type": "uint256" }
+      { "indexed": false, "internalType": "uint256", "name": "newBalance", "type": "uint256" }
     ],
     "name": "DepositToppedUp",
     "type": "event"
@@ -386,7 +375,7 @@ export const ZKBOARD_ABI = [
     // USO: Per mostrare notifica all'utente "Deposito aggiunto!"
     // indexed=true su user: permette di filtrare per utente specifico
     // amount: ETH depositati (in wei)
-    // credits: crediti totali dopo il deposito
+    // newBalance: deposito totale dopo l'aggiunta
   }
 ] as const;
 
@@ -399,11 +388,11 @@ export const MIN_DEPOSIT = '0.05';  // 0.05 ETH
 // PERCHÉ: Garantisce che l'utente possa postare almeno 50 messaggi (0.05 / 0.001 = 50)
 // NOTA: Valore alto per evitare spam. In produzione potrebbe essere ridotto.
 
-// Costo per messaggio (detratto dai crediti)
+// Costo per messaggio (detratto dal deposito)
 export const COST_PER_MESSAGE = '0.001';  // 0.001 ETH = 1 finney = 1,000,000 gwei
-// CALCOLO: Ogni messaggio via relay costa 0.001 ETH
-// CREDITI: credits = deposits / COST_PER_MESSAGE
-// ESEMPIO: deposito 0.01 ETH → credits = 10 messaggi
+// CALCOLO: Ogni messaggio costa 0.001 ETH (scalato dal deposito)
+// MESSAGGI DISPONIBILI: deposits / COST_PER_MESSAGE
+// ESEMPIO: deposito 0.01 ETH → 10 messaggi disponibili
 
 // Fee di default per le richieste di relay
 export const DEFAULT_RELAY_FEE = '0.001';  // 0.001 ETH
@@ -512,7 +501,7 @@ FUNZIONI VIEW (stateMutability: "view" o "pure"):
   - NON costano gas (gratis!)
   - NON richiedono firma con wallet
   - Risultato disponibile immediatamente
-  - ESEMPI: groupId(), deposits(address), credits(address), relayRequests(id)
+  - ESEMPI: groupId(), deposits(address), relayRequests(id)
 
 FUNZIONI WRITE (stateMutability: "nonpayable" o "payable"):
   - Modificano lo stato della blockchain
